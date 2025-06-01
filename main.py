@@ -9,15 +9,15 @@ from collections import Counter, defaultdict
 from PIL import Image, ImageTk
 
 # =============================================================================
-# 0) RESOURCE PATH HANDLING FOR SCRIPT VS. BUNDLED EXE
+# 0) MANEJO DE RUTAS PARA SCRIPT VS. EXE
 # =============================================================================
 def get_base_path():
     """
-    Return the folder where our resources (card_data/, card_images/) live.
-    1) If running as a PyInstaller one-file EXE, sys.frozen=True and sys._MEIPASS
-       points to a temp folder containing everything.
-    2) Otherwise, check if card_data/ & card_images/ exist next to this script;
-       if not, fall back to the current working directory.
+    Devuelve la carpeta donde residen nuestros recursos (card_data/, card_images/).
+    1) Si se ejecuta como EXE compilado, sys.frozen = True y sys._MEIPASS apunta
+       a la carpeta temporal con todo incluido.
+    2) De otro modo, si existen card_data/ y card_images/ junto a este script,
+       devolvemos esa carpeta.
     """
     if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         return sys._MEIPASS
@@ -38,24 +38,24 @@ CARD_IMAGES_DIR = os.path.join(BASE_PATH, "card_images")
 DECKS_DIR       = os.path.join(BASE_PATH, "decks")
 
 def verify_data_folders():
-    missing = []
+    faltantes = []
     if not os.path.isdir(CARD_DATA_DIR):
-        missing.append(f"  • {CARD_DATA_DIR}")
+        faltantes.append(f"  • {CARD_DATA_DIR}")
     if not os.path.isdir(CARD_IMAGES_DIR):
-        missing.append(f"  • {CARD_IMAGES_DIR}")
+        faltantes.append(f"  • {CARD_IMAGES_DIR}")
 
-    if missing:
-        msg = "Cannot locate the required folder(s):\n" + "\n".join(missing) + (
-            "\n\nMake sure you:\n"
-            " • If running the EXE, built with\n"
-            "   --add-data \"card_data;card_data\"\n"
-            "   and --add-data \"card_images;card_images\"\n"
-            " • If running as .py, ensure card_data/ and card_images/ exist\n"
-            "   next to main.py or in your working directory."
-        )
+    if faltantes:
+        msg = ("No se pueden encontrar las carpetas requeridas:\n" +
+               "\n".join(faltantes) + "\n\nPor favor, asegúrate de que:\n"
+               " • Si estás usando el EXE compilado, se incluyeron correctamente\n"
+               "   con PyInstaller usando:\n"
+               "     --add-data \"card_data;card_data\"\n"
+               "     --add-data \"card_images;card_images\"\n"
+               " • Si ejecutas como .py, las carpetas card_data/ y card_images/\n"
+               "   deben estar junto a main.py o en tu directorio de trabajo actual.")
         if getattr(sys, "frozen", False):
             tk.Tk().withdraw()
-            messagebox.showerror("Missing Data Folders", msg)
+            messagebox.showerror("Carpetas faltantes", msg)
         else:
             print("ERROR:", msg)
         sys.exit(1)
@@ -66,13 +66,14 @@ if not os.path.isdir(DECKS_DIR):
     os.makedirs(DECKS_DIR)
 
 # =============================================================================
-# 1) CARD CLASS: load metadata now, images later (after Tk root exists)
+# 1) CLASE CARD: carga metadatos ahora, imágenes luego
 # =============================================================================
 class Card:
     def __init__(self, name):
         """
-        name: string, e.g. "Julio_Cesar" or "oro"
-        Only loads textual data now. Delays loading PhotoImage until load_image() call.
+        name: cadena, p. ej. "Julio_Cesar" o "oro"
+        Sólo carga datos de texto ahora. Deja la creación de PhotoImage hasta
+        el llamado de load_image().
         """
         self.name = name
         self.data_path = os.path.join(CARD_DATA_DIR, f"{name}.txt")
@@ -86,7 +87,7 @@ class Card:
 
     def _load_data(self):
         if not os.path.isfile(self.data_path):
-            raise FileNotFoundError(f"Data file not found: {self.data_path}")
+            raise FileNotFoundError(f"Archivo de datos no encontrado: {self.data_path}")
         with open(self.data_path, "r", encoding="utf-8") as f:
             arr = ast.literal_eval(f.read().strip())
 
@@ -95,32 +96,32 @@ class Card:
             self.category = "Oros"
             self.cost = None
             self.strength = None
-        # 2) [cost, category]  (Armas, Talismanes, Totems)
+        # 2) [cost, "Category"]  (Armas, Talismanes, Totems)
         elif isinstance(arr, list) and len(arr) == 2:
             self.cost = int(arr[0])
             self.strength = None
             self.category = arr[1]
-        # 3) [cost, strength, category] (Aliados)
+        # 3) [cost, strength, "Category"] (Aliados)
         elif isinstance(arr, list) and len(arr) == 3:
             self.cost = int(arr[0])
             self.strength = int(arr[1])
             self.category = arr[2]
         else:
             raise ValueError(
-                f"Invalid format in '{self.data_path}'.\n"
-                "Expected [\"Oros\"] or [cost, category] or [cost, strength, category]."
+                f"Formato inválido en '{self.data_path}'.\n"
+                "Debe ser [\"Oros\"] o [cost, categoría] o [cost, fuerza, categoría]."
             )
 
     def load_image(self):
         """
-        After the Tkinter root exists, call this to create a PhotoImage.
+        Después de que exista la raíz de Tkinter, llama a esto para crear PhotoImage.
         """
         if not os.path.isfile(self.image_path):
             alt_jpg = os.path.join(CARD_IMAGES_DIR, f"{self.name}.jpg")
             if os.path.isfile(alt_jpg):
                 self.image_path = alt_jpg
             else:
-                raise FileNotFoundError(f"Image not found for '{self.name}': {self.image_path}")
+                raise FileNotFoundError(f"Imagen no encontrada para '{self.name}': {self.image_path}")
 
         pil_img = Image.open(self.image_path)
         DISPLAY_WIDTH = 60
@@ -131,7 +132,7 @@ class Card:
         self.tk_image = ImageTk.PhotoImage(pil_resized)
 
 # =============================================================================
-# 2) DECK CLASS: tracks card_name → count
+# 2) CLASE DECK: controla nombre_de_carta → cantidad
 # =============================================================================
 class Deck:
     def __init__(self):
@@ -144,12 +145,12 @@ class Deck:
         self.card_counts[name] += qty
 
     def remove_card(self, name, qty=1):
-        new_c = self.card_counts[name] - qty
-        if new_c <= 0:
+        nuevo = self.card_counts[name] - qty
+        if nuevo <= 0:
             if name in self.card_counts:
                 del self.card_counts[name]
         else:
-            self.card_counts[name] = new_c
+            self.card_counts[name] = nuevo
 
     def list_all_copies(self):
         flat = []
@@ -166,7 +167,7 @@ class Deck:
         return lines
 
 # =============================================================================
-# 3) LOAD ALL_CARDS metadata (no images yet)
+# 3) CARGAR TODOS LOS CARDS (sin imágenes aún)
 # =============================================================================
 ALL_CARDS = {}
 CARD_NAME_MAP = {}
@@ -180,18 +181,18 @@ for fname in os.listdir(CARD_DATA_DIR):
         ALL_CARDS[canonical] = Card(canonical)
         CARD_NAME_MAP[lower_key] = canonical
     except Exception as e:
-        print(f"Warning: could not load card data for '{canonical}': {e}")
+        print(f"Advertencia: no se pudo cargar datos de '{canonical}': {e}")
 
 deck = Deck()
 
 # =============================================================================
-# 4) CATEGORY SUMMARY SETUP
+# 4) RESUMEN DE CATEGORÍAS
 # =============================================================================
 category_order = ["Aliados", "Armas", "Talismanes", "Totems", "Oros", "Total"]
 category_counts = {cat: 0 for cat in category_order}
 category_labels = {}
 
-# We also need a category_priority dict for sorting
+# Usaremos también category_priority para el orden
 category_priority = {
     "Aliados":    0,
     "Armas":      1,
@@ -201,15 +202,15 @@ category_priority = {
 }
 
 # =============================================================================
-# 5) MANA CURVE DATA: cost 1..6 → {category: count}
+# 5) DATOS PARA MANA CURVE: costo 1..6 → {categoría: cantidad}
 # =============================================================================
 cost_category_counts = {i: defaultdict(int) for i in range(1, 7)}
 
 # =============================================================================
-# 6) CALLBACK / UPDATE FUNCTIONS (must be defined before building GUI)
+# 6) FUNCIONES DE ACTUALIZACIÓN
 # =============================================================================
 
-# 6.1) Update the category summary labels on the right
+# 6.1) Actualiza los contadores de categoría a la derecha
 def update_category_summary():
     for cat in category_order:
         category_counts[cat] = 0
@@ -220,7 +221,7 @@ def update_category_summary():
     for cat in category_order:
         category_labels[cat].config(text=str(category_counts[cat]))
 
-# 6.2) Redraw the mana-curve histogram on the left
+# 6.2) Dibuja/redibuja la curva de maná
 def update_mana_curve():
     for cost in range(1, 7):
         cost_category_counts[cost] = defaultdict(int)
@@ -262,7 +263,7 @@ def update_mana_curve():
                 )
             stacked += n
 
-        # Draw cost label under each bar
+        # Etiqueta de costo debajo de cada barra
         curve_canvas.create_text(
             x0 + BAR_WIDTH / 2,
             CANVAS_H - MARGIN_Y + 5,
@@ -270,7 +271,7 @@ def update_mana_curve():
             anchor="n",
             font=("Helvetica", 9)
         )
-        # Draw total count above each bar
+        # Cantidad total arriba de cada barra
         total = sum(cost_category_counts[cost].values())
         curve_canvas.create_text(
             x0 + BAR_WIDTH / 2,
@@ -280,7 +281,7 @@ def update_mana_curve():
             font=("Helvetica", 9, "bold")
         )
 
-# 6.3) Remove one copy of a clicked-on card in the deck display
+# 6.3) Eliminar clicando sobre la carta
 def remove_card_by_click(event):
     clicked = deck_canvas.find_withtag("current")
     if not clicked:
@@ -296,7 +297,7 @@ def remove_card_by_click(event):
         update_deck_display()
         update_consistency()
 
-# 6.4) Add one copy of a clicked-on card in the deck display
+# 6.4) Añadir clicando sobre la carta
 def add_card_by_click(event):
     clicked = deck_canvas.find_withtag("current")
     if not clicked:
@@ -307,7 +308,7 @@ def add_card_by_click(event):
     name = image_id_to_name[item_id]
     current_total = deck.total_cards()
     if current_total >= 50:
-        messagebox.showwarning("Max Deck Size", "Deck already has 50 cards. Cannot add more.")
+        messagebox.showwarning("Límite alcanzado", "La baraja ya tiene 50 cartas. No se pueden añadir más.")
         return
     deck.add_card(name, 1)
     update_category_summary()
@@ -315,8 +316,8 @@ def add_card_by_click(event):
     update_deck_display()
     update_consistency()
 
-# 6.5) Redraw the deck as overlapping card images on the left
-image_id_to_name = {}  # maps Canvas image IDs → card name
+# 6.5) Redibuja la baraja con imágenes solapadas
+image_id_to_name = {}  # mapea IDs en el Canvas → nombre de carta
 
 def card_sort_key(card_name):
     card = ALL_CARDS[card_name]
@@ -345,7 +346,7 @@ def update_deck_display():
     CUR_CAT = None
     CUR_NAME = None
 
-    # Draw all non-Oros cards in sorted order
+    # Dibuja todas las cartas que no son Oros
     for name in sorted_non_oros:
         card = ALL_CARDS[name]
         if CUR_NAME is None:
@@ -376,7 +377,7 @@ def update_deck_display():
         CARD_H = img.height()
         X = cand_x
 
-    # Force all “Oros” cards onto a new row
+    # Forzar todas las cartas Oros en una nueva fila
     if oros_counts:
         X = 0
         Y += (CARD_H + 20) if CARD_H else 140
@@ -407,7 +408,7 @@ def update_deck_display():
                     X += DUP_OFFSET
                 X += CARD_W
 
-# 6.6) CONSISTENCY CALCULATIONS (8-card→7-card→6-card)
+# 6.6) CÁLCULOS DE CONSISTENCIA (8→7→6 mulligan)
 def update_consistency():
     total = deck.total_cards()
     if total != 50:
@@ -419,7 +420,7 @@ def update_consistency():
             lbl.config(text="")
         return
 
-    # Count how many Oros and how many 2-cost Aliados are in the deck
+    # Cantidad de Oros y cantidad de Aliados costo 2 en la baraja
     n_oros = category_counts["Oros"]
     n_ali2 = sum(
         deck.card_counts[name]
@@ -427,7 +428,7 @@ def update_consistency():
         if ALL_CARDS[name].category == "Aliados" and ALL_CARDS[name].cost == 2
     )
 
-    # Hypergeometric helper: P(draw_n cards contains ≥ k items of that “total_type”)
+    # Hipergeométrica: P( al menos k “ítems” en un draw_n )
     def hyper_at_least_k(total_type, draw_n, k, deck_size=50):
         prob = 0.0
         for i in range(k, draw_n + 1):
@@ -440,13 +441,13 @@ def update_consistency():
             )
         return prob
 
-    # Hypergeometric helper: P(draw_n cards contains ≥1 of that “total_type”)
+    # Hipergeométrica: P( al menos 1 del tipo “total_type” )
     def hyper_at_least_one(total_type, draw_n, deck_size=50):
         if total_type == 0:
             return 0.0
         return 1 - (math.comb(deck_size - total_type, draw_n) / math.comb(deck_size, draw_n))
 
-    # Average cost of deck (identical for any sample size)
+    # Costo promedio de la baraja (todos los no-Oros)
     total_cost_all = 0
     total_cost_count = 0
     for name, cnt in deck.card_counts.items():
@@ -455,30 +456,30 @@ def update_consistency():
             total_cost_all += c * cnt
             total_cost_count += cnt
     avg_cost_deck = (total_cost_all / total_cost_count) if total_cost_count > 0 else 0.0
-    avg_cost_text = f"Avg cost: {avg_cost_deck:.2f}"
+    avg_cost_text = f"Costo avg: {avg_cost_deck:.2f}"
 
-    # 8-card single-draw probabilities
+    # Probabilidades de un solo draw con 8 cartas
     p8_o2   = hyper_at_least_k(n_oros, 8, 2)
     p8_o3   = hyper_at_least_k(n_oros, 8, 3)
     p8_ali2 = hyper_at_least_one(n_ali2, 8)
 
-    # 7-card single-draw probabilities
+    # Probabilidades de un solo draw con 7 cartas
     p7_o2   = hyper_at_least_k(n_oros, 7, 2)
     p7_o3   = hyper_at_least_k(n_oros, 7, 3)
     p7_ali2 = hyper_at_least_one(n_ali2, 7)
 
-    # 6-card single-draw probabilities
+    # Probabilidades de un solo draw con 6 cartas
     p6_o2   = hyper_at_least_k(n_oros, 6, 2)
     p6_o3   = hyper_at_least_k(n_oros, 6, 3)
     p6_ali2 = hyper_at_least_one(n_ali2, 6)
 
-    # “Both” = ≥2 Oros AND ≥1 Ali2, computed via double-sum for each sample size
+    # Probabilidad de “ambos” (≥2 Oros y ≥1 Ali2) en draw_n
     def hyper_both(draw_n):
         prob = 0.0
-        for i in range(2, draw_n + 1):               # i = # of Oros
+        for i in range(2, draw_n + 1):               
             if i > n_oros:
                 continue
-            for j in range(1, draw_n - i + 1):       # j = # of Ali2
+            for j in range(1, draw_n - i + 1):       
                 if j > n_ali2 or i + j > draw_n:
                     continue
                 rest_needed = draw_n - i - j
@@ -496,43 +497,41 @@ def update_consistency():
     p7_both = hyper_both(7)
     p6_both = hyper_both(6)
 
-    # ─── Combine for “8 → 7” (one mulligan) and “8 → 7 → 6” (two mulligans) ───
-    # Combined “8 then (if fail) 7”:
+    # ─── Combinar para “8 → 7” (un mulligan) y “8 → 7 → 6” (dos mulligans) ───
     p8to7_o2   = p8_o2   + (1 - p8_o2)   * p7_o2
     p8to7_o3   = p8_o3   + (1 - p8_o3)   * p7_o3
     p8to7_ali2 = p8_ali2 + (1 - p8_ali2) * p7_ali2
     p8to7_both = p8_both + (1 - p8_both) * p7_both
 
-    # Combined “8 then (if fail) 7 then (if that fails) 6”:
     p8to7to6_o2   = p8_o2   + (1 - p8_o2)   * p7_o2   + (1 - p8_o2)   * (1 - p7_o2)   * p6_o2
     p8to7to6_o3   = p8_o3   + (1 - p8_o3)   * p7_o3   + (1 - p8_o3)   * (1 - p7_o3)   * p6_o3
     p8to7to6_ali2 = p8_ali2 + (1 - p8_ali2) * p7_ali2 + (1 - p8_ali2) * (1 - p7_ali2) * p6_ali2
     p8to7to6_both = p8_both + (1 - p8_both) * p7_both + (1 - p8_both) * (1 - p7_both) * p6_both
 
-    # ─── Update Labels (convert to percentage or text) ───
-    lbl8_o2.  config(text=f"P(≥2 Oros): {p8_o2*100:5.2f}%")
-    lbl8_o3.  config(text=f"P(≥3 Oros): {p8_o3*100:5.2f}%")
-    lbl8_ali2.config(text=f"P(≥1 2-cost Aliados): {p8_ali2*100:5.2f}%")
-    lbl8_avg. config(text=avg_cost_text)
+    # ─── Actualizar etiquetas (porcentaje o texto) ───
+    lbl8_o2.config(text=f"P(≥2 Oros): {p8_o2*100:5.2f}%")
+    lbl8_o3.config(text=f"P(≥3 Oros): {p8_o3*100:5.2f}%")
+    lbl8_ali2.config(text=f"P(≥1 Aliado C2): {p8_ali2*100:5.2f}%")
+    lbl8_avg.config(text=avg_cost_text)
 
-    lbl7_o2.  config(text=f"P(≥2 Oros): {p8to7_o2*100:5.2f}%")
-    lbl7_o3.  config(text=f"P(≥3 Oros): {p8to7_o3*100:5.2f}%")
-    lbl7_ali2.config(text=f"P(≥1 2-cost Aliados): {p8to7_ali2*100:5.2f}%")
-    lbl7_avg. config(text=avg_cost_text)
+    lbl7_o2.config(text=f"P(≥2 Oros): {p8to7_o2*100:5.2f}%")
+    lbl7_o3.config(text=f"P(≥3 Oros): {p8to7_o3*100:5.2f}%")
+    lbl7_ali2.config(text=f"P(≥1 Aliado C2): {p8to7_ali2*100:5.2f}%")
+    lbl7_avg.config(text=avg_cost_text)
 
-    lbl6_o2.  config(text=f"P(≥2 Oros): {p8to7to6_o2*100:5.2f}%")
-    lbl6_o3.  config(text=f"P(≥3 Oros): {p8to7to6_o3*100:5.2f}%")
-    lbl6_ali2.config(text=f"P(≥1 2-cost Aliados): {p8to7to6_ali2*100:5.2f}%")
-    lbl6_avg. config(text=avg_cost_text)
+    lbl6_o2.config(text=f"P(≥2 Oros): {p8to7to6_o2*100:5.2f}%")
+    lbl6_o3.config(text=f"P(≥3 Oros): {p8to7to6_o3*100:5.2f}%")
+    lbl6_ali2.config(text=f"P(≥1 Aliado C2): {p8to7to6_ali2*100:5.2f}%")
+    lbl6_avg.config(text=avg_cost_text)
 
-# 6.7) Random-hand dealer: deal, mulligan, redraw functions
+# 6.7) Repartir mano / Mulligan
 current_hand = []
 hand_size = 0
 
 def deal_hand():
     global current_hand, hand_size
     if deck.total_cards() != 50:
-        messagebox.showerror("Error", "Deck must have exactly 50 cards to deal a hand.")
+        messagebox.showerror("Error", "La baraja debe tener exactamente 50 cartas para repartir.")
         return
     hand_size = 8
     draw_new_hand(hand_size)
@@ -540,13 +539,13 @@ def deal_hand():
 def mulligan():
     global current_hand, hand_size
     if not current_hand:
-        messagebox.showerror("Error", "No hand to mulligan. Press 'Deal Hand' first.")
+        messagebox.showerror("Error", "No hay mano para mulligan. Presiona ‘Repartir mano’ primero.")
         return
     if hand_size <= 1:
-        messagebox.showerror("Error", "Cannot mulligan below 1 card.")
+        messagebox.showerror("Error", "No puedes hacer mulligan con menos de 1 carta.")
         return
     if deck.total_cards() != 50:
-        messagebox.showerror("Error", "Deck must have exactly 50 cards to mulligan.")
+        messagebox.showerror("Error", "La baraja debe tener exactamente 50 cartas para mulligan.")
         return
     hand_size -= 1
     draw_new_hand(hand_size)
@@ -607,10 +606,10 @@ def display_hand(hand_list):
     else:
         lbl_turn1.config(fg="red")
 
-# 6.8) Simulate 1000 random hands
+# 6.8) Simular 1000 manos
 def simulate_1000_hands():
     if deck.total_cards() != 50:
-        messagebox.showerror("Error", "Deck must have exactly 50 cards to simulate.")
+        messagebox.showerror("Error", "La baraja debe tener exactamente 50 cartas para simular.")
         return
 
     flat_deck_base = deck.list_all_copies()
@@ -638,15 +637,15 @@ def simulate_1000_hands():
         if cond_oros and cond_turn1:
             count_great += 1
 
-    lbl_sim_two_oros.config(text=f"Hands ≥2 Oros: {count_at_least_2_oros}")
-    lbl_sim_turn1   .config(text=f"Hands Turn1 Play: {count_turn1_play}")
-    lbl_sim_great   .config(text=f"Great hands: {count_great}")
+    lbl_sim_two_oros.config(text=f"Manos ≥2 Oros: {count_at_least_2_oros}")
+    lbl_sim_turn1   .config(text=f"Manos Turno1 Jugada: {count_turn1_play}")
+    lbl_sim_great   .config(text=f"Manos excelentes: {count_great}")
 
-# 6.9) Save / Import Deck Callbacks
+# 6.9) Guardar / Importar baraja
 def save_deck_gui():
     fname = save_entry.get().strip()
     if not fname:
-        messagebox.showerror("Error", "Filename cannot be empty.")
+        messagebox.showerror("Error", "El nombre de archivo no puede estar vacío.")
         return
     decks_folder = DECKS_DIR
     if not os.path.isdir(decks_folder):
@@ -655,7 +654,7 @@ def save_deck_gui():
     with open(path, "w", encoding="utf-8") as f:
         for line in deck.as_save_lines():
             f.write(line + "\n")
-    messagebox.showinfo("Saved", f"Deck saved to {path}")
+    messagebox.showinfo("Guardado", f"Baraja guardada en:\n{path}")
     refresh_deck_dropdown()
 
 def get_deck_files():
@@ -670,7 +669,7 @@ def refresh_deck_dropdown():
     menu.delete(0, "end")
     files = get_deck_files()
     if not files:
-        deck_var.set("No decks")
+        deck_var.set("No hay barajas")
     else:
         deck_var.set(files[0])
         for filename in files:
@@ -678,13 +677,13 @@ def refresh_deck_dropdown():
 
 def import_deck_dropdown():
     selected = deck_var.get()
-    if not selected or selected in ("Select deck", "No decks"):
-        messagebox.showerror("Error", "No deck selected to import.")
+    if not selected or selected in ("Select deck", "No hay barajas"):
+        messagebox.showerror("Error", "No hay ninguna baraja seleccionada para importar.")
         return
 
     file_path = os.path.join(DECKS_DIR, selected)
     if not os.path.isfile(file_path):
-        messagebox.showerror("Error", f"Deck file not found:\n{file_path}")
+        messagebox.showerror("Error", f"No se encontró el archivo de baraja:\n{file_path}")
         return
 
     deck.card_counts.clear()
@@ -725,19 +724,19 @@ def import_deck_dropdown():
     update_consistency()
 
     if truncated:
-        messagebox.showwarning("Import Truncated", "Deck exceeded 50 cards; extras omitted.")
+        messagebox.showwarning("Importación parcial", "La baraja excedía las 50 cartas; se omitieron extras.")
     else:
-        messagebox.showinfo("Import Complete", f"Imported deck from:\n{selected}")
+        messagebox.showinfo("Importación completa", f"Se importó la baraja:\n{selected}")
 
 # =============================================================================
-# 7) GUI SETUP STARTS HERE
+# 7) CONFIGURACIÓN DE LA INTERFAZ (GUI)
 # =============================================================================
 root = tk.Tk()
-root.title("Mitos y Leyendas Deck Builder")
+root.title("Mitos y Leyendas: Constructor de Barajas")
 root.configure(bg="#f5f1e6")
 root.geometry("1200x970")
 
-# ─ Layout: left_container, divider, right_panel ─
+# ─ Layout: left_container, divisor, right_panel ─
 left_container = tk.Frame(root, bg="#f5f1e6")
 divider        = tk.Frame(root, bg="black", width=4)
 right_panel    = tk.Frame(root, bg="#f5f1e6")
@@ -755,7 +754,7 @@ root.grid_rowconfigure(2, weight=3)
 root.grid_rowconfigure(3, weight=1)
 
 # =============================================================================
-# 8) Deck Display (Left Container)
+# 8) Mostrar Baraja (Left Container)
 # =============================================================================
 deck_canvas = tk.Canvas(left_container, width=700, height=300, bg="#f5f1e6", bd=0, highlightthickness=0)
 deck_canvas.grid(row=0, column=0, padx=10, pady=10, sticky="nw")
@@ -763,7 +762,7 @@ deck_canvas.bind("<Button-1>", lambda e: remove_card_by_click(e))
 deck_canvas.bind("<Button-3>", lambda e: add_card_by_click(e))
 
 # =============================================================================
-# 9) Category Summary (Left Container)
+# 9) Resumen de Categorías (Left Container)
 # =============================================================================
 summary_frame = tk.Frame(left_container, bg="#f5f1e6")
 summary_frame.grid(row=0, column=1, padx=(0,20), pady=10, sticky="ne")
@@ -786,18 +785,18 @@ for idx, cat in enumerate(category_order):
     category_labels[cat] = lbl_count
 
 # =============================================================================
-# 10) Mana Curve (Left Container)
+# 10) Curva de Maná (Left Container)
 # =============================================================================
 curve_canvas = tk.Canvas(left_container, width=400, height=200, bg="#e0dacd", bd=0, highlightthickness=0)
 curve_canvas.grid(row=1, column=0, columnspan=2, padx=10, pady=(0,10), sticky="nw")
 
 # =============================================================================
-# 11) Bottom Menu (Left Container)
+# 11) Menú Inferior (Left Container)
 # =============================================================================
 menu_frame = tk.Frame(left_container, bg="#f5f1e6")
 menu_frame.grid(row=3, column=0, columnspan=2, pady=(10,20), sticky="w")
 
-tk.Label(menu_frame, text="Card name:", bg="#f5f1e6").grid(row=0, column=0, sticky="e")
+tk.Label(menu_frame, text="Nombre de carta:", bg="#f5f1e6").grid(row=0, column=0, sticky="e")
 card_name_entry = tk.Entry(menu_frame, width=25)
 card_name_entry.grid(row=0, column=1, padx=(5,20))
 
@@ -827,7 +826,7 @@ def accept_autocomplete(event):
 card_name_entry.bind("<KeyRelease>", autocomplete)
 card_name_entry.bind("<Return>", accept_autocomplete)
 
-tk.Label(menu_frame, text="Quantity:", bg="#f5f1e6").grid(row=0, column=2, sticky="e")
+tk.Label(menu_frame, text="Cantidad:", bg="#f5f1e6").grid(row=0, column=2, sticky="e")
 qty_entry = tk.Entry(menu_frame, width=5)
 qty_entry.grid(row=0, column=3, padx=(5,20))
 
@@ -835,7 +834,7 @@ def add_card_gui():
     user_input = card_name_entry.get().strip()
     lookup = user_input.lower()
     if lookup not in CARD_NAME_MAP:
-        messagebox.showerror("Error", f"Card '{user_input}' not found.")
+        messagebox.showerror("Error", f"Carta '{user_input}' no encontrada.")
         return
     canonical = CARD_NAME_MAP[lookup]
     try:
@@ -843,20 +842,20 @@ def add_card_gui():
         if qty <= 0:
             raise ValueError
     except ValueError:
-        messagebox.showerror("Error", "Quantity must be a positive integer.")
+        messagebox.showerror("Error", "Cantidad debe ser un número entero positivo.")
         return
 
     current_total = deck.total_cards()
     capacity_left = 50 - current_total
     if capacity_left <= 0:
-        messagebox.showwarning("Max Deck Size", "Deck already has 50 cards.")
+        messagebox.showwarning("Límite alcanzado", "La baraja ya tiene 50 cartas.")
         return
 
     if qty > capacity_left:
         deck.add_card(canonical, capacity_left)
         messagebox.showwarning(
-            "Partial Add",
-            f"Only {capacity_left} card(s) added to reach 50. Deck is now full."
+            "Añadido parcial",
+            f"Solo se añadieron {capacity_left} carta(s) para llegar a 50. La baraja está completa."
         )
     else:
         deck.add_card(canonical, qty)
@@ -866,25 +865,25 @@ def add_card_gui():
     update_deck_display()
     update_consistency()
 
-add_button = tk.Button(menu_frame, text="Add Card", command=add_card_gui)
+add_button = tk.Button(menu_frame, text="Añadir carta", command=add_card_gui)
 add_button.grid(row=0, column=4, padx=(5,20))
 
 def remove_card_gui():
     user_input = card_name_entry.get().strip()
     lookup = user_input.lower()
     if lookup not in CARD_NAME_MAP:
-        messagebox.showerror("Error", f"Card '{user_input}' not found.")
+        messagebox.showerror("Error", f"Carta '{user_input}' no encontrada.")
         return
     canonical = CARD_NAME_MAP[lookup]
     if canonical not in deck.card_counts or deck.card_counts[canonical] == 0:
-        messagebox.showerror("Error", f"Card '{canonical}' is not in deck.")
+        messagebox.showerror("Error", f"La carta '{canonical}' no está en la baraja.")
         return
     try:
         qty = int(qty_entry.get().strip())
         if qty <= 0:
             raise ValueError
     except ValueError:
-        messagebox.showerror("Error", "Quantity must be a positive integer.")
+        messagebox.showerror("Error", "Cantidad debe ser un número entero positivo.")
         return
 
     deck.remove_card(canonical, qty)
@@ -893,20 +892,20 @@ def remove_card_gui():
     update_deck_display()
     update_consistency()
 
-remove_button = tk.Button(menu_frame, text="Remove Card", command=remove_card_gui)
+remove_button = tk.Button(menu_frame, text="Eliminar carta", command=remove_card_gui)
 remove_button.grid(row=0, column=5, padx=(5,20))
 
-tk.Label(menu_frame, text="Save as:", bg="#f5f1e6").grid(row=1, column=0, sticky="e", pady=(10,0))
+tk.Label(menu_frame, text="Guardar como:", bg="#f5f1e6").grid(row=1, column=0, sticky="e", pady=(10,0))
 save_entry = tk.Entry(menu_frame, width=20)
 save_entry.grid(row=1, column=1, padx=(5,20), pady=(10,0))
 
-save_button = tk.Button(menu_frame, text="Save Deck", command=save_deck_gui)
+save_button = tk.Button(menu_frame, text="Guardar baraja", command=save_deck_gui)
 save_button.grid(row=1, column=2, padx=(5,20), pady=(10,0))
 
-tk.Label(menu_frame, text="Import deck:", bg="#f5f1e6").grid(row=1, column=3, sticky="e", pady=(10,0))
+tk.Label(menu_frame, text="Importar baraja:", bg="#f5f1e6").grid(row=1, column=3, sticky="e", pady=(10,0))
 
 deck_var = tk.StringVar()
-deck_var.set("Select deck")
+deck_var.set("Seleccionar baraja")
 
 deck_option = tk.OptionMenu(menu_frame, deck_var, *get_deck_files())
 deck_option.config(width=20)
@@ -914,18 +913,18 @@ deck_option.grid(row=1, column=4, padx=(5,20), pady=(10,0))
 
 refresh_deck_dropdown()
 
-import_button = tk.Button(menu_frame, text="Import Deck", command=import_deck_dropdown)
+import_button = tk.Button(menu_frame, text="Importar baraja", command=import_deck_dropdown)
 import_button.grid(row=1, column=5, padx=(5,20), pady=(10,0))
 
-quit_button = tk.Button(menu_frame, text="Quit", command=root.destroy)
+quit_button = tk.Button(menu_frame, text="Salir", command=root.destroy)
 quit_button.grid(row=1, column=6, padx=(5,0), pady=(10,0))
 
 # =============================================================================
-# 12) CONSISTENCY SECTION (Right Panel)
+# 12) SECCIÓN DE CONSISTENCIA (Panel Derecho)
 # =============================================================================
 consistency_frame = tk.LabelFrame(
     right_panel,
-    text="Consistency",
+    text="Consistencia",
     bg="#f5f1e6",
     font=("Helvetica", 10, "bold"),
     padx=5,
@@ -933,7 +932,6 @@ consistency_frame = tk.LabelFrame(
 )
 consistency_frame.grid(row=0, column=0, padx=10, pady=(10,5), sticky="nwe")
 
-# Build three side-by-side columns: 8-card, 7-card, 6-card
 col8 = tk.Frame(consistency_frame, bg="#f5f1e6")
 col7 = tk.Frame(consistency_frame, bg="#f5f1e6")
 col6 = tk.Frame(consistency_frame, bg="#f5f1e6")
@@ -944,36 +942,36 @@ col6.grid(row=0, column=2, sticky="nw")
 
 LABEL_FONT = ("Helvetica", 9)
 
-# 8-card column
-tk.Label(col8, text="8-card draw", font=("Helvetica", 10, "bold"), bg="#f5f1e6").grid(row=0, column=0, sticky="w", pady=(0,4))
+# Columna 8 cartas
+tk.Label(col8, text="Robar 8 cartas", font=("Helvetica", 10, "bold"), bg="#f5f1e6").grid(row=0, column=0, sticky="w", pady=(0,4))
 lbl8_o2   = tk.Label(col8, text="P(≥2 Oros): 0.00%",         font=LABEL_FONT, bg="#f5f1e6")
 lbl8_o3   = tk.Label(col8, text="P(≥3 Oros): 0.00%",         font=LABEL_FONT, bg="#f5f1e6")
-lbl8_ali2 = tk.Label(col8, text="P(≥1 2-cost Aliados): 0.00%", font=LABEL_FONT, bg="#f5f1e6")
-lbl8_avg  = tk.Label(col8, text="Avg cost: 0.00",             font=LABEL_FONT, bg="#f5f1e6")
+lbl8_ali2 = tk.Label(col8, text="P(≥1 Aliado C2): 0.00%",     font=LABEL_FONT, bg="#f5f1e6")
+lbl8_avg  = tk.Label(col8, text="Costo avg: 0.00",           font=LABEL_FONT, bg="#f5f1e6")
 
 lbl8_o2.grid(row=1, column=0, sticky="w")
 lbl8_o3.grid(row=2, column=0, sticky="w")
 lbl8_ali2.grid(row=3, column=0, sticky="w")
 lbl8_avg.grid(row=4, column=0, sticky="w", pady=(0,2))
 
-# 7-card column (one mulligan)
-tk.Label(col7, text="8→7 mulligan", font=("Helvetica", 10, "bold"), bg="#f5f1e6").grid(row=0, column=0, sticky="w", pady=(0,4))
+# Columna 8→7 (un mulligan)
+tk.Label(col7, text="8 → 7 Mulligan", font=("Helvetica", 10, "bold"), bg="#f5f1e6").grid(row=0, column=0, sticky="w", pady=(0,4))
 lbl7_o2   = tk.Label(col7, text="P(≥2 Oros): 0.00%",         font=LABEL_FONT, bg="#f5f1e6")
 lbl7_o3   = tk.Label(col7, text="P(≥3 Oros): 0.00%",         font=LABEL_FONT, bg="#f5f1e6")
-lbl7_ali2 = tk.Label(col7, text="P(≥1 2-cost Aliados): 0.00%", font=LABEL_FONT, bg="#f5f1e6")
-lbl7_avg  = tk.Label(col7, text="Avg cost: 0.00",             font=LABEL_FONT, bg="#f5f1e6")
+lbl7_ali2 = tk.Label(col7, text="P(≥1 Aliado C2): 0.00%",     font=LABEL_FONT, bg="#f5f1e6")
+lbl7_avg  = tk.Label(col7, text="Costo avg: 0.00",           font=LABEL_FONT, bg="#f5f1e6")
 
 lbl7_o2.grid(row=1, column=0, sticky="w")
 lbl7_o3.grid(row=2, column=0, sticky="w")
 lbl7_ali2.grid(row=3, column=0, sticky="w")
 lbl7_avg.grid(row=4, column=0, sticky="w", pady=(0,2))
 
-# 6-card column (two mulligans)
-tk.Label(col6, text="8→7→6 mulligan", font=("Helvetica", 10, "bold"), bg="#f5f1e6").grid(row=0, column=0, sticky="w", pady=(0,4))
+# Columna 8→7→6 (dos mulligans)
+tk.Label(col6, text="8 → 7 → 6 Mulligan", font=("Helvetica", 10, "bold"), bg="#f5f1e6").grid(row=0, column=0, sticky="w", pady=(0,4))
 lbl6_o2   = tk.Label(col6, text="P(≥2 Oros): 0.00%",         font=LABEL_FONT, bg="#f5f1e6")
 lbl6_o3   = tk.Label(col6, text="P(≥3 Oros): 0.00%",         font=LABEL_FONT, bg="#f5f1e6")
-lbl6_ali2 = tk.Label(col6, text="P(≥1 2-cost Aliados): 0.00%", font=LABEL_FONT, bg="#f5f1e6")
-lbl6_avg  = tk.Label(col6, text="Avg cost: 0.00",             font=LABEL_FONT, bg="#f5f1e6")
+lbl6_ali2 = tk.Label(col6, text="P(≥1 Aliado C2): 0.00%",     font=LABEL_FONT, bg="#f5f1e6")
+lbl6_avg  = tk.Label(col6, text="Costo avg: 0.00",           font=LABEL_FONT, bg="#f5f1e6")
 
 lbl6_o2.grid(row=1, column=0, sticky="w")
 lbl6_o3.grid(row=2, column=0, sticky="w")
@@ -981,11 +979,11 @@ lbl6_ali2.grid(row=3, column=0, sticky="w")
 lbl6_avg.grid(row=4, column=0, sticky="w", pady=(0,2))
 
 # =============================================================================
-# 13) RANDOM HAND DEALER (Right Panel)
+# 13) RANDOM HAND DEALER (Panel Derecho)
 # =============================================================================
 hand_frame = tk.LabelFrame(
     right_panel,
-    text="Random Hand Dealer",
+    text="Repartir Mano Aleatoria",
     bg="#f5f1e6",
     font=("Helvetica", 10, "bold"),
     padx=5,
@@ -993,11 +991,11 @@ hand_frame = tk.LabelFrame(
 )
 hand_frame.grid(row=1, column=0, padx=10, pady=(5,10), sticky="nwe")
 
-# Two-row canvas (height=180 so both rows fit)
+# Canvas de 2 filas (height=180 para que quepan ambas filas)
 deal_canvas = tk.Canvas(hand_frame, width=380, height=180, bg="#f5f1e6", bd=0, highlightthickness=0)
 deal_canvas.grid(row=0, column=0, rowspan=2, padx=(5,5), pady=(5,5), sticky="nw")
 
-# Info text box (next to first row of cards)
+# Texto de info (junto a la primera fila de cartas)
 info_text = tk.Label(
     hand_frame,
     text="Aliados: 0\nOros: 0\nSoporte: 0",
@@ -1007,22 +1005,22 @@ info_text = tk.Label(
 )
 info_text.grid(row=0, column=1, padx=(5,10), pady=(5,5), sticky="nw")
 
-# Simulation box (next to second row of cards)
+# Cuadro de simulación (junto a la segunda fila de cartas)
 sim_frame = tk.Frame(hand_frame, bg="#f5f1e6")
 sim_frame.grid(row=1, column=1, padx=(5,10), pady=(5,5), sticky="nw")
 
-hundred_button = tk.Button(sim_frame, text="1000 Hands", width=10, command=lambda: simulate_1000_hands())
-hundred_button.grid(row=0, column=0, padx=(0,5))
+thousand_button = tk.Button(sim_frame, text="1000 Manos", width=10, command=lambda: simulate_1000_hands())
+thousand_button.grid(row=0, column=0, padx=(0,5))
 
-lbl_sim_two_oros = tk.Label(sim_frame, text="Hands ≥2 Oros: 0", bg="#f5f1e6", font=("Helvetica", 10))
-lbl_sim_turn1    = tk.Label(sim_frame, text="Hands Turn1 Play: 0", bg="#f5f1e6", font=("Helvetica", 10))
-lbl_sim_great    = tk.Label(sim_frame, text="Great hands: 0", bg="#f5f1e6", font=("Helvetica", 10))
+lbl_sim_two_oros = tk.Label(sim_frame, text="Manos ≥2 Oros: 0", bg="#f5f1e6", font=("Helvetica", 10))
+lbl_sim_turn1    = tk.Label(sim_frame, text="Manos Turno1 Jugada: 0", bg="#f5f1e6", font=("Helvetica", 10))
+lbl_sim_great    = tk.Label(sim_frame, text="Manos excelentes: 0", bg="#f5f1e6", font=("Helvetica", 10))
 
 lbl_sim_two_oros.grid(row=1, column=0, sticky="w")
 lbl_sim_turn1   .grid(row=2, column=0, sticky="w")
 lbl_sim_great   .grid(row=3, column=0, sticky="w")
 
-# Bottom row (2 Oros, Deal, Mulligan, Turn 1 play)
+# Fila inferior: “2 Oros”, “Repartir mano”, “Mulligan”, “Turno 1 jugada”
 hand_button_frame = tk.Frame(hand_frame, bg="#f5f1e6")
 hand_button_frame.grid(row=2, column=0, columnspan=2, pady=(5,5), sticky="w")
 
@@ -1035,7 +1033,7 @@ lbl_two_oros = tk.Label(
 )
 lbl_two_oros.grid(row=0, column=0, padx=(0,20))
 
-deal_button = tk.Button(hand_button_frame, text="Deal Hand", width=10, command=lambda: deal_hand())
+deal_button = tk.Button(hand_button_frame, text="Repartir mano", width=10, command=lambda: deal_hand())
 deal_button.grid(row=0, column=1, padx=(0,10))
 
 mulligan_button = tk.Button(hand_button_frame, text="Mulligan", width=10, command=lambda: mulligan())
@@ -1043,7 +1041,7 @@ mulligan_button.grid(row=0, column=2, padx=(0,20))
 
 lbl_turn1 = tk.Label(
     hand_button_frame,
-    text="Turn 1 play",
+    text="Turno 1 jugada",
     font=("Helvetica", 10, "bold"),
     fg="black",
     bg="#f5f1e6"
@@ -1051,13 +1049,13 @@ lbl_turn1 = tk.Label(
 lbl_turn1.grid(row=0, column=3, padx=(0,0))
 
 # =============================================================================
-# 14) LOAD ALL CARD IMAGES & INITIAL DRAW
+# 14) CARGAR TODAS LAS IMÁGENES & PRIMER DIBUJO
 # =============================================================================
 for card in ALL_CARDS.values():
     try:
         card.load_image()
     except Exception as e:
-        print(f"Warning: could not load image for '{card.name}': {e}")
+        print(f"Advertencia: no se pudo cargar imagen de '{card.name}': {e}")
 
 update_category_summary()
 update_mana_curve()
