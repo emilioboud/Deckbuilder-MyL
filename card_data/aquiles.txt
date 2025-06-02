@@ -1,1 +1,1 @@
-[4,6,"Aliados"]
+[4,6,"Aliados","\"Heroes\""]
