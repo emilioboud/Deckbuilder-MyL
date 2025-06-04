@@ -1,0 +1,1 @@
+[5,3,"aliados","dragon","esp","reborn"]
