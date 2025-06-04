@@ -1,6 +1,0 @@
-- ogma
-- nuada-brazo-de-plata
-- demonio-de-tara
-- tethra
-- vincegeratorix
-- bodicea
