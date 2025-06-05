@@ -579,11 +579,11 @@ def update_deck_display():
     sorted_non_oros = sorted(non_oro_list, key=card_sort_key)
 
     CANVAS_W = int(deck_canvas.cget("width"))
-    CARD_W = 60
+    CARD_W = 80
     CARD_H = None
 
     DUP_OFFSET = 20
-    SAME_CAT_OFFSET = 30
+    SAME_CAT_OFFSET = 60
     DIFF_CAT_OFFSET = CARD_W
 
     X, Y = 0, 0
