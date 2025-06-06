@@ -1,3 +1,5 @@
+# main.py (parte superior)
+
 import os
 import sys
 import ast
@@ -47,42 +49,13 @@ CARD_IMAGES_DIR  = os.path.join(BASE_PATH, "card_images")
 DECKS_DIR        = os.path.join(BASE_PATH, "decks")
 RESTRICTIONS_DIR = os.path.join(BASE_PATH, "restrictions")
 
-def verify_data_folders():
-    faltantes = []
-    if not os.path.isdir(CARD_DATA_DIR):
-        faltantes.append(f"  • {CARD_DATA_DIR}")
-    if not os.path.isdir(CARD_IMAGES_DIR):
-        faltantes.append(f"  • {CARD_IMAGES_DIR}")
-    if not os.path.isdir(RESTRICTIONS_DIR):
-        faltantes.append(f"  • {RESTRICTIONS_DIR}")
-
-    if faltantes:
-        msg = (
-            "No se pueden encontrar las carpetas requeridas:\n"
-            + "\n".join(faltantes)
-            + "\n\nPor favor, asegúrate de que:\n"
-            " • Si estás usando el EXE compilado, se incluyeron correctamente\n"
-            "   con PyInstaller usando:\n"
-            "     --add-data \"card_data;card_data\"\n"
-            "     --add-data \"card_images;card_images\"\n"
-            "     --add-data \"restrictions;restrictions\"\n"
-            " • Si ejecutas como .py, las carpetas card_data/, card_images/ y restrictions/\n"
-            "   deben estar junto a main.py o en tu directorio de trabajo actual."
-        )
-        if getattr(sys, "frozen", False):
-            tk.Tk().withdraw()
-            messagebox.showerror("Carpetas faltantes", msg)
-        else:
-            print("ERROR:", msg)
-        sys.exit(1)
-
-verify_data_folders()
-
-if not os.path.isdir(DECKS_DIR):
-    os.makedirs(DECKS_DIR)
+# =============================================================================
+# IMPORTAR CLASE Card DESDE cards.py
+# =============================================================================
+from cards import Card, CARD_DATA_DIR, CARD_IMAGES_DIR, load_restricted_limits, SAGA_MAP, RACES_BY_SAGA
 
 # =============================================================================
-# 1) CARGAR RESTRICCIONES
+# CARGAR RESTRICCIONES
 # =============================================================================
 CARD_MAX_DEFAULT = 3
 restricted_limits = {}
@@ -108,7 +81,7 @@ for sub in ("pbx", "reborn"):
                     continue
 
 # =============================================================================
-# 2) ASOCIACIÓN DE SAGAS A CARPETAS DE IMÁGENES (_)
+# ASOCIACIÓN DE SAGAS A CARPETAS DE IMÁGENES (_)
 # =============================================================================
 SAGA_FOLDERS = {
     "Espada Sagrada":    ["espada_sagrada", "cruzadas"],
@@ -132,188 +105,18 @@ RACES_BY_SAGA = {
 }
 
 # =============================================================================
-# 3) CLASE CARD: adapta al nuevo formato de los .txt
+# CLASE CARD: adapta al nuevo formato de los .txt
 # =============================================================================
-class Card:
-    def __init__(self, name):
-        """
-        name: cadena, p. ej. "julio-cesar" o "oro"
-        Carga datos desde card_data/<name>.txt con el siguiente esquema según tipo:
-        
-        - Oro:
-          ["oros", "<saga_abrev>", "<formato>"]
-        - Talismanes/Armas/Totems:
-          [<coste:int>, "<tipo>", "<saga_abrev>", "<formato>"]
-        - Aliados:
-          [<coste:int>, <fuerza:int>, "aliados", "<raza>", "<saga_abrev>", "<formato>"]
-        """
-        self.name = name
-        self.data_path = os.path.join(CARD_DATA_DIR, f"{name}.txt")
-        self.image_path = None
 
-        self.category = None    # "Aliados","Talismanes","Totems","Armas","Oros"
-        self.cost = None        # int o None
-        self.strength = None    # int o None
-        self.race = None        # string o None
-        self.saga = None        # nombre completo de saga
-        self.format = None      # "pbx" o "reborn"
-        self.tk_image = None    # PhotoImage cargada en load_image()
-
-        self._load_data()
-
-    def _load_data(self):
-        if not os.path.isfile(self.data_path):
-            raise FileNotFoundError(f"Archivo de datos no encontrado: {self.data_path}")
-        with open(self.data_path, "r", encoding="utf-8") as f:
-            arr = ast.literal_eval(f.read().strip())
-
-        if not isinstance(arr, list):
-            raise ValueError(f"Formato inválido en '{self.data_path}'")
-
-        # Oro: ["oros", "<saga_abrev>", "<formato>"]
-        if len(arr) == 3 and isinstance(arr[0], str) and arr[0].lower() == "oros":
-            tipo = arr[0].lower()
-            saga_ab = arr[1].lower()
-            formato = arr[2].lower()
-
-            if saga_ab not in SAGA_MAP:
-                raise ValueError(f"Saga inválida en '{self.data_path}': '{saga_ab}'")
-            if formato not in ("pbx", "reborn"):
-                raise ValueError(f"Formato inválido en '{self.data_path}': '{formato}'")
-
-            self.category = "Oros"
-            self.cost = None
-            self.strength = None
-            self.race = None
-            self.saga = SAGA_MAP[saga_ab]
-            self.format = formato
-
-        # Talismanes/Armas/Totems: [coste, "<tipo>", "<saga_abrev>", "<formato>"]
-        elif len(arr) == 4 and isinstance(arr[0], int) and isinstance(arr[1], str):
-            coste = arr[0]
-            tipo = arr[1].lower()
-            saga_ab = arr[2].lower()
-            formato = arr[3].lower()
-
-            if tipo not in ("talismanes", "armas", "totems"):
-                raise ValueError(f"Tipo inválido en '{self.data_path}': '{tipo}'")
-            if saga_ab not in SAGA_MAP:
-                raise ValueError(f"Saga inválida en '{self.data_path}': '{saga_ab}'")
-            if formato not in ("pbx", "reborn"):
-                raise ValueError(f"Formato inválido en '{self.data_path}': '{formato}'")
-
-            self.category = tipo.capitalize()  # "Talismanes","Armas","Totems"
-            self.cost = coste
-            self.strength = None
-            self.race = None
-            self.saga = SAGA_MAP[saga_ab]
-            self.format = formato
-
-        # Aliados: [coste, fuerza, "aliados", "<raza>", "<saga_abrev>", "<formato>"]
-        elif len(arr) == 6 and isinstance(arr[0], int) and isinstance(arr[1], int) and isinstance(arr[2], str):
-            coste = arr[0]
-            fuerza = arr[1]
-            tipo = arr[2].lower()
-            raza = arr[3].lower()
-            saga_ab = arr[4].lower()
-            formato = arr[5].lower()
-
-            if tipo != "aliados":
-                raise ValueError(f"Tipo inválido en '{self.data_path}', se esperaba 'aliados' pero viene '{tipo}'")
-            if raza not in (
-                "dragon", "caballero", "faerie", "heroe",
-                "olimpico", "titan", "defensor", "desafiante",
-                "sombra", "faraon", "sacerdote", "eterno"
-            ):
-                raise ValueError(f"Raza inválida en '{self.data_path}': '{raza}'")
-            if saga_ab not in SAGA_MAP:
-                raise ValueError(f"Saga inválida en '{self.data_path}': '{saga_ab}'")
-            if formato not in ("pbx", "reborn"):
-                raise ValueError(f"Formato inválido en '{self.data_path}': '{formato}'")
-
-            self.category = "Aliados"
-            self.cost = coste
-            self.strength = fuerza
-            self.race = raza
-            self.saga = SAGA_MAP[saga_ab]
-            self.format = formato
-
-        else:
-            raise ValueError(
-                f"Formato inválido en '{self.data_path}'.\n"
-                "Revisa las reglas:\n"
-                "  Oro → [\"oros\", saga_abrev, formato]\n"
-                "  Talis/Armas/Totems → [coste, tipo, saga_abrev, formato]\n"
-                "  Aliados → [coste, fuerza, \"aliados\", raza, saga_abrev, formato]\n"
-            )
-
-    def load_image(self):
-        """
-        Busca la imagen correspondiente (<name>.png o <name>.jpg)
-        recorriendo recursivamente card_images/ (carpetas con _).
-        Luego la redimensiona a ancho fijo (80 px) y guarda PhotoImage en self.tk_image.
-        """
-        found = False
-        for root, dirs, files in os.walk(CARD_IMAGES_DIR):
-            for fname in files:
-                lower = fname.lower()
-                if (lower.endswith(".png") or lower.endswith(".jpg")) and lower[:-4] == self.name.lower():
-                    self.image_path = os.path.join(root, fname)
-                    found = True
-                    break
-            if found:
-                break
-
-        if not found:
-            raise FileNotFoundError(f"Imagen no encontrada para '{self.name}' en subcarpetas de {CARD_IMAGES_DIR}")
-
-        pil_img = Image.open(self.image_path)
-        DISPLAY_WIDTH = 80
-        w, h = pil_img.size
-        ratio = DISPLAY_WIDTH / w
-        new_h = int(h * ratio)
-        pil_resized = pil_img.resize((DISPLAY_WIDTH, new_h), Image.LANCZOS)
-        self.tk_image = ImageTk.PhotoImage(pil_resized)
+from cards import Card, CARD_DATA_DIR, CARD_IMAGES_DIR, load_restricted_limits, SAGA_MAP, RACES_BY_SAGA
 
 # =============================================================================
-# 4) CLASE DECK: controla nombre_de_carta → cantidad, estado guardado
+# CLASE DECK: controla nombre_de_carta → cantidad, estado guardado
 # =============================================================================
-class Deck:
-    def __init__(self):
-        self.card_counts = Counter()
-        self.is_saved = False  # para saber si el mazo fue guardado/importado sin cambios posteriores
+from deck import Deck, deck, ALL_CARDS, CARD_NAME_MAP
+from deck import is_card_valid_for_filters, can_add_card
+from deck import get_deck_files, load_deck_from_file, save_deck_to_file, restricted_limits
 
-    def total_cards(self):
-        return sum(self.card_counts.values())
-
-    def add_card(self, name, qty=1):
-        self.card_counts[name] += qty
-        self.is_saved = False
-
-    def remove_card(self, name, qty=1):
-        nuevo = self.card_counts[name] - qty
-        if nuevo <= 0:
-            if name in self.card_counts:
-                del self.card_counts[name]
-        else:
-            self.card_counts[name] = nuevo
-        self.is_saved = False
-
-    def list_all_copies(self):
-        flat = []
-        for name, cnt in self.card_counts.items():
-            flat.extend([name] * cnt)
-        return flat
-
-    def as_save_lines(self):
-        lines = []
-        for name in sorted(self.card_counts.keys()):
-            cnt = self.card_counts[name]
-            if cnt > 0:
-                lines.append(f"{cnt}x{name}")
-        return lines
-
-deck = Deck()
 
 # =============================================================================
 # 5) CARGAR TODOS LOS CARDS
@@ -677,109 +480,43 @@ def update_deck_display():
 
     update_category_summary()
 
+from stats import cumulative_probabilities
+
 def update_consistency():
     total = deck.total_cards()
+    # Si no hay 50 cartas, limpia las etiquetas y regresa
     if total != 50:
         for lbl in (
-            lbl8_o2, lbl8_o3, lbl8_ali2, lbl8_avg,
-            lbl7_o2, lbl7_o3, lbl7_ali2, lbl7_avg,
-            lbl6_o2, lbl6_o3, lbl6_ali2, lbl6_avg
+            lbl8_ali2, lbl8_o2, lbl8_o3,
+            lbl7_ali2, lbl7_o2, lbl7_o3,
+            lbl6_ali2, lbl6_o2, lbl6_o3
         ):
             lbl.config(text="")
         return
 
+    # Conteos base
     n_oros = category_counts["Oros"]
     n_ali2 = sum(
-        deck.card_counts[n] for n in deck.card_counts
+        deck.card_counts[n]
+        for n in deck.card_counts
         if ALL_CARDS[n].category == "Aliados" and ALL_CARDS[n].cost == 2
     )
 
-    def hyper_at_least_k(total_type, draw_n, k, deck_size=50):
-        prob = 0.0
-        for i in range(k, draw_n + 1):
-            if i > total_type or (draw_n - i) > (deck_size - total_type):
-                continue
-            prob += (
-                math.comb(total_type, i)
-                * math.comb(deck_size - total_type, draw_n - i)
-                / math.comb(deck_size, draw_n)
-            )
-        return prob
+    # Usar la función de stats.py para obtener todas las probabilidades
+    probs = cumulative_probabilities(n_oros, n_ali2)
 
-    def hyper_at_least_one(total_type, draw_n, deck_size=50):
-        if total_type == 0:
-            return 0.0
-        return 1 - (math.comb(deck_size - total_type, draw_n) / math.comb(deck_size, draw_n))
+    # Actualizar las etiquetas con porcentajes formateados
+    lbl8_ali2.config(text=f"Prob. ≥1 Aliado C2: {probs['p8_ali2']*100:5.2f}%")
+    lbl8_o2  .config(text=f"Prob. ≥2 Oros:            {probs['p8_o2']*100:5.2f}%")
+    lbl8_o3  .config(text=f"Prob. ≥3 Oros:            {probs['p8_o3']*100:5.2f}%")
 
-    total_cost_all = 0
-    total_cost_count = 0
-    for nm, cnt in deck.card_counts.items():
-        c = ALL_CARDS[nm].cost
-        if c is not None:
-            total_cost_all += c * cnt
-            total_cost_count += cnt
-    avg_cost_deck = (total_cost_all / total_cost_count) if total_cost_count > 0 else 0.0
-    avg_cost_text = f"Costo avg: {avg_cost_deck:.2f}"
+    lbl7_ali2.config(text=f"Prob. ≥1 Aliado C2: {probs['p8to7_ali2']*100:5.2f}%")
+    lbl7_o2  .config(text=f"Prob. ≥2 Oros:            {probs['p8to7_o2']*100:5.2f}%")
+    lbl7_o3  .config(text=f"Prob. ≥3 Oros:            {probs['p8to7_o3']*100:5.2f}%")
 
-    p8_o2   = hyper_at_least_k(n_oros, 8, 2)
-    p8_o3   = hyper_at_least_k(n_oros, 8, 3)
-    p8_ali2 = hyper_at_least_one(n_ali2, 8)
-
-    p7_o2   = hyper_at_least_k(n_oros, 7, 2)
-    p7_o3   = hyper_at_least_k(n_oros, 7, 3)
-    p7_ali2 = hyper_at_least_one(n_ali2, 7)
-
-    p6_o2   = hyper_at_least_k(n_oros, 6, 2)
-    p6_o3   = hyper_at_least_k(n_oros, 6, 3)
-    p6_ali2 = hyper_at_least_one(n_ali2, 6)
-
-    def hyper_both(draw_n):
-        prob = 0.0
-        for i in range(2, draw_n + 1):
-            if i > n_oros:
-                continue
-            for j in range(1, draw_n - i + 1):
-                if j > n_ali2 or i + j > draw_n:
-                    continue
-                rest = draw_n - i - j
-                if rest > (50 - n_oros - n_ali2):
-                    continue
-                prob += (
-                    math.comb(n_oros, i)
-                    * math.comb(n_ali2, j)
-                    * math.comb(50 - n_oros - n_ali2, rest)
-                    / math.comb(50, draw_n)
-                )
-        return prob
-
-    p8_both = hyper_both(8)
-    p7_both = hyper_both(7)
-    p6_both = hyper_both(6)
-
-    p8to7_o2   = p8_o2   + (1 - p8_o2)   * p7_o2
-    p8to7_o3   = p8_o3   + (1 - p8_o3)   * p7_o3
-    p8to7_ali2 = p8_ali2 + (1 - p8_ali2) * p7_ali2
-    p8to7_both = p8_both + (1 - p8_both) * p7_both
-
-    p8to7to6_o2   = p8_o2   + (1 - p8_o2)   * p7_o2   + (1 - p8_o2)   * (1 - p7_o2)   * p6_o2
-    p8to7to6_o3   = p8_o3   + (1 - p8_o3)   * p7_o3   + (1 - p8_o3)   * (1 - p7_o3)   * p6_o3
-    p8to7to6_ali2 = p8_ali2 + (1 - p8_ali2) * p7_ali2 + (1 - p8_ali2) * (1 - p7_ali2) * p6_ali2
-    p8to7to6_both = p8_both + (1 - p8_both) * p7_both + (1 - p8_both) * (1 - p7_both) * p6_both
-
-    lbl8_o2.config(text=f"P(≥2 Oros): {p8_o2*100:5.2f}%")
-    lbl8_o3.config(text=f"P(≥3 Oros): {p8_o3*100:5.2f}%")
-    lbl8_ali2.config(text=f"P(≥1 Aliado C2): {p8_ali2*100:5.2f}%")
-    lbl8_avg.config(text=avg_cost_text)
-
-    lbl7_o2.config(text=f"P(≥2 Oros): {p8to7_o2*100:5.2f}%")
-    lbl7_o3.config(text=f"P(≥3 Oros): {p8to7to6_o3*100:5.2f}%")
-    lbl7_ali2.config(text=f"P(≥1 Aliado C2): {p8to7_ali2*100:5.2f}%")
-    lbl7_avg.config(text=avg_cost_text)
-
-    lbl6_o2.config(text=f"P(≥2 Oros): {p8to7to6_o2*100:5.2f}%")
-    lbl6_o3.config(text=f"P(≥3 Oros): {p8to7to6_o3*100:5.2f}%")
-    lbl6_ali2.config(text=f"P(≥1 Aliado C2): {p8to7to6_ali2*100:5.2f}%")
-    lbl6_avg.config(text=avg_cost_text)
+    lbl6_ali2.config(text=f"Prob. ≥1 Aliado C2: {probs['p8to7to6_ali2']*100:5.2f}%")
+    lbl6_o2  .config(text=f"Prob. ≥2 Oros:            {probs['p8to7to6_o2']*100:5.2f}%")
+    lbl6_o3  .config(text=f"Prob. ≥3 Oros:            {probs['p8to7to6_o3']*100:5.2f}%")
 
 current_hand = []
 hand_size = 0
@@ -897,20 +634,20 @@ def simulate_1000_hands():
     lbl_sim_great   .config(text=f"Manos excelentes: {count_great}")
 
 def save_deck_gui():
+    """
+    Guarda el mazo usando save_deck_to_file de deck.py.
+    """
     fname = save_entry.get().strip()
     if not fname:
         messagebox.showerror("Error", "El nombre de archivo no puede estar vacío.")
         return
-    decks_folder = DECKS_DIR
-    if not os.path.isdir(decks_folder):
-        os.makedirs(decks_folder)
-    path = os.path.join(decks_folder, f"{fname}.txt")
-    with open(path, "w", encoding="utf-8") as f:
-        for line in deck.as_save_lines():
-            f.write(line + "\n")
+
+    # Usar la función de deck.py para guardar
+    path = save_deck_to_file(deck.card_counts, fname)
     messagebox.showinfo("Guardado", f"Baraja guardada en:\n{path}")
     deck.is_saved = True
     refresh_deck_dropdown()
+
 
 def get_deck_files():
     files = []
@@ -934,6 +671,18 @@ def refresh_deck_dropdown():
     deck_option.config(justify="right", anchor="e")
 
 def import_deck_dropdown():
+    """
+    Importa el mazo seleccionado usando load_deck_from_file de deck.py,
+    pero exige primero que se haya elegido Saga, Raza y Formato.
+    """
+    # Primero validamos que el usuario haya configurado filtros
+    if current_saga is None or current_race is None or current_format is None:
+        messagebox.showerror(
+            "Error",
+            "Debes seleccionar primero Saga, Raza y Formato antes de importar una baraja."
+        )
+        return
+
     selected = deck_var.get()
     if not selected or selected in ("Sin barajas",):
         messagebox.showerror("Error", "No hay ninguna baraja seleccionada para importar.")
@@ -944,50 +693,52 @@ def import_deck_dropdown():
         messagebox.showerror("Error", f"No se encontró el archivo de baraja:\n{file_path}")
         return
 
+    # Cargar los conteos nuevos desde el archivo, aplicando filtros
+    nuevo_counts = load_deck_from_file(file_path, current_saga, current_race, current_format)
+
+    # Si load_deck_from_file devolvió vacío y el archivo no está vacío,
+    # significa que todas las cartas fallaron los filtros o no existían.
+    # Mostramos advertencia y cancelamos si no se cargó nada.
+    if not nuevo_counts:
+        messagebox.showwarning(
+            "Importación fallida",
+            "No se pudo importar ninguna carta porque no cumple los filtros de Saga/Raza/Formato."
+        )
+        return
+
+    # Reemplazar el conteo del deck global
     deck.card_counts.clear()
-    total_added = 0
-    truncated = False
-
-    with open(file_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or "x" not in line:
-                continue
-            parts = line.split("x", 1)
-            try:
-                cnt = int(parts[0])
-            except ValueError:
-                continue
-            card_name = parts[1]
-            lookup = card_name.lower()
-            if lookup not in CARD_NAME_MAP:
-                continue
-            canonical = CARD_NAME_MAP[lookup]
-
-            if not is_card_valid_for_filters(canonical):
-                truncated = True
-                continue
-
-            max_allowed = restricted_limits.get(canonical, CARD_MAX_DEFAULT)
-            cnt = min(cnt, max_allowed)
-            capacity_left = 50 - total_added
-            if capacity_left <= 0:
-                truncated = True
-                break
-            actual_add = min(cnt, capacity_left)
-            deck.card_counts[canonical] = actual_add
-            total_added += actual_add
-            if actual_add < cnt:
-                truncated = True
-
+    for name, count in nuevo_counts.items():
+        deck.card_counts[name] = count
     deck.is_saved = True
+
+    # Actualizar toda la UI relacionada
     update_category_summary()
     update_mana_curve()
     update_deck_display()
     update_consistency()
+    update_stats()
 
-    if truncated:
-        messagebox.showwarning("Importación parcial", "Algunas cartas no cumplieron filtros o límites; se omitieron o recortaron.")
+    # Si algunas cartas del archivo superaban límites o no cumplían filtros,
+    # load_deck_from_file ya las omitió. Informamos al usuario si así fue.
+    total_archivo = 0
+    with open(file_path, "r", encoding="utf-8") as f_check:
+        for line in f_check:
+            line = line.strip()
+            if not line or "x" not in line:
+                continue
+            try:
+                qty = int(line.split("x", 1)[0])
+            except ValueError:
+                continue
+            total_archivo += qty
+
+    total_cargadas = sum(nuevo_counts.values())
+    if total_cargadas < total_archivo:
+        messagebox.showwarning(
+            "Importación parcial",
+            "Algunas cartas no cumplieron filtros o límites; se omitieron o recortaron."
+        )
 
 # =============================================================================
 # 11) CONFIGURACIÓN DE LA INTERFAZ (GUI)
@@ -1006,13 +757,39 @@ left_container.grid(row=0, column=0, rowspan=4, sticky="nsew")
 divider       .grid(row=0, column=1, rowspan=4, sticky="ns")
 right_panel   .grid(row=0, column=2, rowspan=4, sticky="nsew")
 
-root.grid_columnconfigure(0, weight=0)
-root.grid_columnconfigure(1, weight=0)
-root.grid_columnconfigure(2, weight=1)
-root.grid_rowconfigure(0, weight=6)
-root.grid_rowconfigure(1, weight=3)
-root.grid_rowconfigure(2, weight=3)
-root.grid_rowconfigure(3, weight=1)
+# -----------------------------------------------------------------------------------
+# > Configuración de GRID para que la ventana sea resizable <
+
+# Ahora hacemos que las dos columnas principales (izquierda y derecha) crezcan proporcionalmente.
+root.grid_columnconfigure(0, weight=1)  # left_container
+root.grid_columnconfigure(1, weight=0)  # divider
+root.grid_columnconfigure(2, weight=1)  # right_panel
+
+# Filas: ajustamos para que la parte superior (gráficos) tenga algo más de espacio,
+# y las filas inferiores repartan el espacio restante.
+root.grid_rowconfigure(0, weight=5)  # Deck + Summary
+root.grid_rowconfigure(1, weight=2)  # Mana curve + Estadísticas
+root.grid_rowconfigure(2, weight=2)  # Estadísticas adicionales + Consistencia
+root.grid_rowconfigure(3, weight=1)  # Menú inferior / importación
+
+# Además, dentro de left_container y right_panel, hacemos que sus hijos se expandan:
+
+# Para left_container:
+left_container.grid_columnconfigure(0, weight=3)  # deck_canvas
+left_container.grid_columnconfigure(1, weight=1)  # summary_frame y stats_frame
+left_container.grid_rowconfigure(0, weight=5)     # deck_canvas + summary_frame
+left_container.grid_rowconfigure(1, weight=2)     # curve_canvas
+left_container.grid_rowconfigure(2, weight=2)     # stats_frame
+left_container.grid_rowconfigure(3, weight=1)     # menú inferior
+
+# Para right_panel:
+right_panel.grid_columnconfigure(0, weight=1)
+right_panel.grid_rowconfigure(0, weight=2)  # consistency_frame
+right_panel.grid_rowconfigure(1, weight=3)  # hand_frame
+right_panel.grid_rowconfigure(2, weight=4)  # Deal canvas + simulación
+right_panel.grid_rowconfigure(3, weight=1)  # (opcional fila extra si la hay)
+# -----------------------------------------------------------------------------------
+
 
 # =============================================================================
 # 12) Mostrar Baraja (Left Container) – REVISADO (ANCHO MAYOR PARA MÁS CARTAS)
@@ -1118,37 +895,64 @@ def update_mana_curve():
         )
 
 # =============================================================================
-# 15) Menú Inferior 
-#     - “Saga” habilita “Raza”
-#     - “Raza” habilita “Formato”
-#     - Autocompletado de “Carta” solo con Enter o flecha derecha, según filtros
+# Menú Inferior – creación de los tres OptionMenu (Saga, Raza y Formato)
 # =============================================================================
 menu_frame = tk.Frame(left_container, bg=BG_DEFAULT)
 menu_frame.grid(row=3, column=0, columnspan=2, padx=10, pady=(10,20), sticky="w")
 
-# --- Saga ---
-tk.Label(menu_frame, text="Saga:", font=("Helvetica", 10, "bold"), bg=BG_DEFAULT).grid(row=0, column=0, sticky="e")
-saga_var = tk.StringVar(value="— Seleccione —")
-saga_menu = tk.OptionMenu(
-    menu_frame, saga_var,
-    "Espada Sagrada", "Helenica", "Hijos de Daana", "Dominios de Ra"
-)
-saga_menu.config(width=18, font=("Helvetica", 10), bg=BG_DEFAULT)
-saga_menu.grid(row=0, column=1, padx=(5,20))
+# No hacemos grid_propagate(False) en menu_frame completo, 
+# porque queremos que crezca para contener sus hijos.
+# (Solo fijaremos el ancho de cada OptionMenu, no del frame.)
 
-# --- Raza (deshabilitado hasta que elija Saga) ---
-tk.Label(menu_frame, text="Raza:", font=("Helvetica", 10, "bold"), bg=BG_DEFAULT).grid(row=0, column=2, sticky="e")
-race_var = tk.StringVar(value="— Seleccione —")
-race_menu = tk.OptionMenu(menu_frame, race_var, "")
+# --- Saga ---
+lbl_saga = tk.Label(
+    menu_frame,
+    text="Saga:",
+    font=("Helvetica", 10, "bold"),
+    bg=BG_DEFAULT,
+    fg="red"   # Empieza en rojo, porque aún no se ha seleccionado nada
+)
+lbl_saga.grid(row=0, column=0, sticky="e")
+saga_var = tk.StringVar(value="Seleccione")
+# Construimos el OptionMenu con la lista de opciones incluyendo "Seleccione" al inicio:
+saga_options = ["Seleccione", "Espada Sagrada", "Helenica", "Hijos de Daana", "Dominios de Ra"]
+saga_menu = tk.OptionMenu(menu_frame, saga_var, *saga_options)
+# Fijamos ancho y estilo, sin grid_propagate para que no cambie al seleccionar:
+saga_menu.config(width=18, font=("Helvetica", 10), bg=BG_DEFAULT, state="normal")
+saga_menu.grid(row=0, column=1, padx=(5,20))
+saga_menu.grid_propagate(False)
+
+# --- Raza (deshabilitado hasta que se elija Saga) ---
+lbl_raza = tk.Label(
+    menu_frame,
+    text="Raza:",
+    font=("Helvetica", 10, "bold"),
+    bg=BG_DEFAULT,
+    fg=BG_DEFAULT  # Inicialmente color fondo (sin resaltar)
+)
+lbl_raza.grid(row=0, column=2, sticky="e")
+race_var = tk.StringVar(value="Seleccione")
+# Inicialmente solo incluye "Seleccione":
+race_menu = tk.OptionMenu(menu_frame, race_var, "Seleccione")
 race_menu.config(width=15, font=("Helvetica", 10), bg=BG_DEFAULT, state="disabled")
 race_menu.grid(row=0, column=3, padx=(5,20))
+race_menu.grid_propagate(False)
 
-# --- Formato (deshabilitado hasta que elija Raza) ---
-tk.Label(menu_frame, text="Formato:", font=("Helvetica", 10, "bold"), bg=BG_DEFAULT).grid(row=0, column=4, sticky="e")
-format_var = tk.StringVar(value="— Seleccione —")
-format_menu = tk.OptionMenu(menu_frame, format_var, "Pbx", "Reborn")
+# --- Formato (deshabilitado hasta que se elija Raza) ---
+lbl_formato = tk.Label(
+    menu_frame,
+    text="Formato:",
+    font=("Helvetica", 10, "bold"),
+    bg=BG_DEFAULT,
+    fg=BG_DEFAULT  # Inicialmente color fondo (sin resaltar)
+)
+lbl_formato.grid(row=0, column=4, sticky="e")
+format_var = tk.StringVar(value="Seleccione")
+# Inicialmente solo incluye "Seleccione":
+format_menu = tk.OptionMenu(menu_frame, format_var, "Seleccione")
 format_menu.config(width=10, font=("Helvetica", 10), bg=BG_DEFAULT, state="disabled")
 format_menu.grid(row=0, column=5, padx=(5,20))
+format_menu.grid_propagate(False)
 
 # --- Campo “Carta” con Autocompletado en Línea ---
 tk.Label(menu_frame, text="Carta:", font=("Helvetica", 10, "bold"), bg=BG_DEFAULT).grid(row=1, column=0, sticky="e")
@@ -1156,7 +960,7 @@ card_entry = tk.Entry(menu_frame, width=30, font=("Helvetica", 10))
 card_entry.grid(row=1, column=1, columnspan=3, padx=(5,20))
 
 def autocomplete_card(event):
-    # Si presiona Enter o flecha derecha, aceptamos el autocompletado actual
+    # Si presiona Enter o flecha derecha, consumimos la selección
     if event.keysym in ("Right", "Return"):
         try:
             card_entry.select_clear()
@@ -1165,7 +969,7 @@ def autocomplete_card(event):
             pass
         return
 
-    # Si presiona Backspace, solo limpiamos la selección y dejamos que borre
+    # Si presiona BackSpace, limpiamos la selección
     if event.keysym == "BackSpace":
         try:
             card_entry.select_clear()
@@ -1174,14 +978,12 @@ def autocomplete_card(event):
         return
 
     full_text = card_entry.get()
-    # Tomamos solo la parte antes de cualquier texto seleccionado (la parte "typed")
     try:
         sel_start = card_entry.index("sel.first")
         typed = full_text[:sel_start]
     except tk.TclError:
         typed = full_text
 
-    # Solo intentamos autocompletar si el usuario ha escrito al menos 2 caracteres
     if len(typed.strip()) < 2:
         try:
             card_entry.select_clear()
@@ -1193,7 +995,6 @@ def autocomplete_card(event):
     if current_saga is None or current_format is None:
         return
 
-    # Buscar coincidencias según filtros
     matches = []
     for nm in ALL_CARDS:
         if not nm.startswith(internal_typed):
@@ -1212,7 +1013,6 @@ def autocomplete_card(event):
         display = " ".join(part.capitalize() for part in full_name.split("-"))
         card_entry.delete(0, tk.END)
         card_entry.insert(0, display)
-
         start_idx = len(typed)
         card_entry.select_range(start_idx, tk.END)
         card_entry.icursor(start_idx)
@@ -1222,7 +1022,6 @@ def autocomplete_card(event):
         except tk.TclError:
             pass
 
-# Asociar autocompletado a Enter y flecha derecha
 card_entry.bind("<KeyRelease>", autocomplete_card)
 
 # --- Cantidad ---
@@ -1238,7 +1037,7 @@ add_button.grid(row=1, column=6, padx=(5,20))
 remove_button = tk.Button(menu_frame, text="Eliminar carta", font=("Helvetica", 10, "bold"), command=remove_card_gui)
 remove_button.grid(row=1, column=7, padx=(5,20))
 
-# --- Guardar / Importar / Salir ---
+# --- Guardar / Importar / Salir en la misma fila 2 ---
 tk.Label(menu_frame, text="Guardar como:", font=("Helvetica", 10, "bold"), bg=BG_DEFAULT).grid(row=2, column=0, sticky="e", pady=(10,0))
 save_entry = tk.Entry(menu_frame, width=20, font=("Helvetica", 10))
 save_entry.grid(row=2, column=1, padx=(5,20), pady=(10,0))
@@ -1258,6 +1057,43 @@ import_button.grid(row=2, column=5, padx=(5,20), pady=(10,0))
 quit_button = tk.Button(menu_frame, text="Salir", font=("Helvetica", 10, "bold"), command=root.destroy)
 quit_button.grid(row=2, column=6, padx=(5,0), pady=(10,0))
 
+# =============================================================================
+# Función para poblar “Raza” según la saga seleccionada
+# =============================================================================
+def refresh_race_options(selected_saga):
+    menu = race_menu["menu"]
+    menu.delete(0, "end")
+
+    # Si no hay saga válida, dejamos Raza en “Seleccione” y deshabilitado
+    if not selected_saga or selected_saga not in RACES_BY_SAGA:
+        race_var.set("Seleccione")
+        race_menu.config(state="disabled", width=15)
+        race_menu.grid_propagate(False)
+
+        # También reiniciamos Formato a “Seleccione” y lo deshabilitamos
+        format_var.set("Seleccione")
+        format_menu.config(state="disabled", width=10)
+        format_menu.grid_propagate(False)
+        return
+
+    # Si hay saga válida, ponemos “Seleccione” y luego llenamos las razas
+    race_var.set("Seleccione")
+    for raza in RACES_BY_SAGA[selected_saga]:
+        display = raza.capitalize()
+        # Cuando el usuario elige esta raza, race_var guarda el valor en minúsculas
+        menu.add_command(
+            label=display,
+            command=lambda valor=display.lower(): race_var.set(valor)
+        )
+
+    race_menu.config(state="normal", width=15)
+    race_menu.grid_propagate(False)
+
+    # Reiniciamos Formato (sin opción) y lo deshabilitamos hasta que race cambie
+    format_var.set("Seleccione")
+    format_menu.config(state="disabled", width=10)
+    format_menu.grid_propagate(False)
+
 
 # =============================================================================
 # Función para poblar “Raza” según la saga seleccionada
@@ -1266,44 +1102,120 @@ def refresh_race_options(selected_saga):
     menu = race_menu["menu"]
     menu.delete(0, "end")
 
+    # Si no hay saga válida, dejamos Raza en “Seleccione” y deshabilitado
     if not selected_saga or selected_saga not in RACES_BY_SAGA:
-        race_var.set("— Seleccione —")
-        race_menu.config(state="disabled")
-        format_var.set("— Seleccione —")
-        format_menu.config(state="disabled")
+        race_var.set("Seleccione")
+        race_menu.config(state="disabled", width=15)
+        race_menu.grid_propagate(False)
+
+        # También reiniciamos Formato a “Seleccione” y lo deshabilitamos
+        format_var.set("Seleccione")
+        format_menu.config(state="disabled", width=10)
+        format_menu.grid_propagate(False)
         return
 
+    # Si hay saga válida, ponemos “Seleccione” y luego llenamos las razas
+    race_var.set("Seleccione")
     for raza in RACES_BY_SAGA[selected_saga]:
         display = raza.capitalize()
+        # Ahora guardamos el valor con la primera letra en mayúscula
         menu.add_command(
             label=display,
-            command=lambda value=raza: race_var.set(value)
+            command=lambda valor=display: race_var.set(valor)
         )
 
-    race_var.set("— Seleccione —")
-    race_menu.config(state="normal")
-    format_var.set("— Seleccione —")
-    format_menu.config(state="disabled")
+    race_menu.config(state="normal", width=15)
+    race_menu.grid_propagate(False)
+
+    # Reiniciamos Formato (sin opción) y lo deshabilitamos hasta que race cambie
+    format_var.set("Seleccione")
+    format_menu.config(state="disabled", width=10)
+    format_menu.grid_propagate(False)
 
 # =============================================================================
-# Callbacks para habilitar/deshabilitar menús encadenados
+# Función para poblar “Formato” cuando ya se haya elegido Raza
 # =============================================================================
+def refresh_format_options():
+    menu = format_menu["menu"]
+    menu.delete(0, "end")
+
+    # Mostramos “Pbx” y “Reborn” con la primera letra en mayúscula
+    for fmt in ("Pbx", "Reborn"):
+        menu.add_command(
+            label=fmt,
+            command=lambda valor=fmt: format_var.set(valor)
+        )
+
+    format_var.set("Seleccione")
+    format_menu.config(state="normal", width=10)
+    format_menu.grid_propagate(False)
+    
+# =============================================================================
+# FUNCIÓN DE “HIGHLIGHT” VACÍA (ya no hace nada, la dejamos para no romper referencias)
+# =============================================================================
+def highlight_if_unselected(var, menubutton):
+    pass
+def update_label_highlight():
+    """
+    - Si saga_var == "Seleccione" → lbl_saga en rojo; lbl_raza y lbl_formato en BG_DEFAULT.
+    - Si ya hay saga pero race_var == "Seleccione" → lbl_raza en rojo; los demás en BG_DEFAULT.
+    - Si hay saga y raza pero format_var == "Seleccione" → lbl_formato en rojo; los demás en BG_DEFAULT.
+    - Si los tres están elegidos → todos en BG_DEFAULT.
+    """
+    # 1) No hay saga seleccionada
+    if saga_var.get() == "Seleccione":
+        lbl_saga.config(fg="red")
+        lbl_raza.config(fg=BG_DEFAULT)
+        lbl_formato.config(fg=BG_DEFAULT)
+        return
+
+    # 2) Hay saga, pero no hay raza
+    if race_var.get() == "Seleccione":
+        lbl_saga.config(fg=BG_DEFAULT)
+        lbl_raza.config(fg="red")
+        lbl_formato.config(fg=BG_DEFAULT)
+        return
+
+    # 3) Hay saga y raza, pero no hay formato
+    if format_var.get() == "Seleccione":
+        lbl_saga.config(fg=BG_DEFAULT)
+        lbl_raza.config(fg=BG_DEFAULT)
+        lbl_formato.config(fg="red")
+        return
+
+    # 4) Ya están saga, raza y formato seleccionados
+    lbl_saga.config(fg=BG_DEFAULT)
+    lbl_raza.config(fg=BG_DEFAULT)
+    lbl_formato.config(fg=BG_DEFAULT)
+
+# =============================================================================
+# CALLBACKS PARA LOS DROPDOWNS (Saga, Raza, Formato)
+# ────────────────────────────────────────────────────────────────────────────────
+# Ahora utilizamos un enfoque que siempre arranca de "Seleccione" y
+# vuelve a poblar el menú cuando toca, sin modificar highlightthickness.
+# =============================================================================
+
 def on_saga_change(*args):
     global current_saga, current_race, current_format
     sel = saga_var.get()
     card_entry.delete(0, tk.END)
 
-    # Siempre que cambie saga, reseteo race y format
+    # Cada vez que cambia Saga, reseteamos Raza y Formato:
     current_race = None
-    race_var.set("— Seleccione —")
-    race_menu.config(state="disabled")
-    current_format = None
-    format_var.set("— Seleccione —")
-    format_menu.config(state="disabled")
+    race_var.set("Seleccione")
+    race_menu.config(state="disabled", width=15)
+    race_menu.grid_propagate(False)
 
-    if sel == "— Seleccione —":
+    current_format = None
+    format_var.set("Seleccione")
+    format_menu.config(state="disabled", width=10)
+    format_menu.grid_propagate(False)
+
+    # Si el usuario seleccionó "Seleccione", no ponemos saga activa:
+    if sel == "Seleccione":
         current_saga = None
     else:
+        # Hay saga válida: eliminamos del deck cualquier carta de otra saga
         invalidas = [n for n in deck.card_counts if ALL_CARDS[n].saga != sel]
         if invalidas and deck.total_cards() > 0:
             if deck.is_saved:
@@ -1317,40 +1229,49 @@ def on_saga_change(*args):
             deck.card_counts.clear()
             deck.is_saved = False
 
+        # Registramos la saga y cambiamos color de fondo:
         current_saga = sel
         set_background_color_for_saga(sel)
-        # habilito la lista de razas para esta saga
+
+        # Ahora sí habilitamos y poblamos el menú de Raza:
         menu = race_menu["menu"]
         menu.delete(0, "end")
+        # Insertamos siempre primero la opción "Seleccione":
+        menu.add_command(label="Seleccione", command=lambda: race_var.set("Seleccione"))
+        # Luego las razas asociadas a la saga (con primera letra mayúscula):
         for raza in RACES_BY_SAGA[sel]:
             display = raza.capitalize()
-            menu.add_command(label=display, command=lambda value=raza: race_var.set(value))
-        race_menu.config(state="normal")
+            menu.add_command(label=display, command=lambda valor=display: race_var.set(valor))
 
+        race_menu.config(state="normal", width=15)
+        race_menu.grid_propagate(False)
+
+    # Actualizamos toda la UI relacionada:
     update_category_summary()
     update_mana_curve()
     update_deck_display()
     update_consistency()
     update_stats()
-    highlight_if_unselected(saga_var, saga_menu)
-    highlight_if_unselected(race_var, race_menu)
-    highlight_if_unselected(format_var, format_menu)
-
+    update_label_highlight()
 
 
 def on_race_change(*args):
     global current_race, current_format
-    sel = race_var.get().lower()
+    sel_raw = race_var.get()
     card_entry.delete(0, tk.END)
 
-    # Siempre que cambie raza, reseteo format
+    # Cada vez que cambia Raza, reseteamos Formato:
     current_format = None
-    format_var.set("— Seleccione —")
-    format_menu.config(state="disabled")
+    format_var.set("Seleccione")
+    format_menu.config(state="disabled", width=10)
+    format_menu.grid_propagate(False)
 
-    if sel == "— seleccione —":
+    # Si el usuario seleccionó "Seleccione", no ponemos raza activa:
+    if sel_raw == "Seleccione":
         current_race = None
     else:
+        # Hay raza válida: eliminamos del deck cualquier Aliado de otra raza
+        sel = sel_raw.lower()
         invalidas = [
             n for n in deck.card_counts
             if ALL_CARDS[n].category == "Aliados" and ALL_CARDS[n].race != sel
@@ -1367,24 +1288,35 @@ def on_race_change(*args):
             deck.card_counts.clear()
             deck.is_saved = False
 
+        # Registramos la raza y habilitamos Formato:
         current_race = sel
-        # habilito la lista de formatos para esta raza
-        format_menu.config(state="normal")
+        # Poblamos Formato cada vez que hay una raza nueva:
+        menu = format_menu["menu"]
+        menu.delete(0, "end")
+        menu.add_command(label="Seleccione", command=lambda: format_var.set("Seleccione"))
+        # Las dos opciones disponibles (capitalizadas):
+        for fmt in ("Pbx", "Reborn"):
+            menu.add_command(label=fmt, command=lambda valor=fmt: format_var.set(valor))
 
+        format_menu.config(state="normal", width=10)
+        format_menu.grid_propagate(False)
+
+    # Actualizamos la UI:
     update_category_summary()
     update_mana_curve()
     update_deck_display()
     update_consistency()
     update_stats()
-    highlight_if_unselected(race_var, race_menu)
-    highlight_if_unselected(format_var, format_menu)
+    update_label_highlight()
+
 
 def on_format_change(*args):
     global current_format
     sel = format_var.get()
     card_entry.delete(0, tk.END)
 
-    if sel == "— Seleccione —":
+    # Si el usuario seleccionó "Seleccione", no hay formato activo:
+    if sel == "Seleccione":
         current_format = None
     else:
         lowercase = sel.lower()
@@ -1403,19 +1335,21 @@ def on_format_change(*args):
 
         current_format = lowercase
 
+    # Actualizamos la UI:
     update_category_summary()
     update_mana_curve()
     update_deck_display()
     update_consistency()
     update_stats()
-    highlight_if_unselected(format_var, format_menu)
+    update_label_highlight()
 
+# Registramos los traces para que cada vez que cambie la StringVar se invoque el callback:
 saga_var.trace("w", on_saga_change)
 race_var.trace("w", on_race_change)
 format_var.trace("w", on_format_change)
 
 # =============================================================================
-# 16) Sección de “Consistencia” (RIGHT PANEL) – CORREGIR ORDEN Y FÓRMULAS
+# Sección de “Consistencia” (RIGHT PANEL) – CORREGIR ORDEN Y FÓRMULAS
 # =============================================================================
 consistency_frame = tk.LabelFrame(
     right_panel,
@@ -1540,7 +1474,7 @@ def update_consistency():
     lbl6_o3  .config(text=f"Prob. ≥3 Oros: {p8to7to6_o3*100:5.2f}%")
 
 # =============================================================================
-# 17) Resumen de Categorías y Estadísticas Adicionales
+# Resumen de Categorías y Estadísticas Adicionales
 # =============================================================================
 
 # Estadísticas Adicionales – justo debajo de “Resumen de Categorías”
@@ -1560,7 +1494,7 @@ lbl_avg_cost.grid(row=0, column=0, sticky="w", pady=(0,2))
 lbl_avg_str .grid(row=1, column=0, sticky="w")
 
 # =============================================================================
-# 18) Repartir Mano Aleatoria (PANEL DERECHO) – BOTONES A LO ANCHO COMPLETO
+# Repartir Mano Aleatoria (PANEL DERECHO) – BOTONES A LO ANCHO COMPLETO
 # =============================================================================
 hand_frame = tk.LabelFrame(
     right_panel,
@@ -1661,16 +1595,7 @@ hand_button_frame.grid_columnconfigure(2, weight=1)
 hand_button_frame.grid_columnconfigure(3, weight=1)
 
 # =============================================================================
-# 19) FUNCIONES DE AYUDA (highlight)
-# =============================================================================
-def highlight_if_unselected(var, menubutton):
-    if var.get() == "— Seleccione —":
-        menubutton.config(highlightthickness=2, highlightbackground="red")
-    else:
-        menubutton.config(highlightthickness=0)
-
-# =============================================================================
-# 20) CALLBACKS PARA DROPDOWNS (Saga, Raza, Formato) – habilitar Raza/Formato solo tras Saga
+# CALLBACKS PARA DROPDOWNS (Saga, Raza, Formato) – habilitar Raza/Formato solo tras Saga
 # =============================================================================
 def set_background_color_for_saga(saga):
     if saga == "Hijos de Daana":
@@ -1704,7 +1629,7 @@ def set_background_color_for_saga(saga):
     consistency_frame.configure(bg=color)
 
 # =============================================================================
-# 21) EVENTOS de CLIC SOBRE CARTA (Left Container)
+# EVENTOS de CLIC SOBRE CARTA (Left Container)
 #    - Clic izquierdo quita 1 copia
 #    - Clic derecho agrega 1 copia
 # =============================================================================
