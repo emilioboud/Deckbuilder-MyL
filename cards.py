@@ -32,6 +32,8 @@ BASE_PATH        = get_base_path()
 CARD_DATA_DIR    = os.path.join(BASE_PATH, "card_data")
 CARD_IMAGES_DIR  = os.path.join(BASE_PATH, "card_images")
 RESTRICTIONS_DIR = os.path.join(BASE_PATH, "restrictions")
+CARD_DISPLAY_W = 104 # ancho deseado en píxeles
+CARD_DISPLAY_H = 156# alto deseado en píxeles
 
 # =============================================================================
 # Función para cargar límites restringidos
@@ -128,8 +130,9 @@ class Card:
 
     def load_image(self):
         """
-        Busca la imagen (<name>.png/.jpg), la redimensiona a 80×H,
-        la centra en un lienzo de 80×120, y guarda PhotoImage en self.tk_image.
+        Busca la imagen (<name>.png/.jpg), la redimensiona manteniendo aspect ratio
+        dentro de CARD_DISPLAY_W×CARD_DISPLAY_H, la centra en un lienzo de ese tamaño,
+        y guarda PhotoImage en self.tk_image.
         """
         global _IMAGE_CACHE
         try:
@@ -142,7 +145,7 @@ class Card:
             self.tk_image = _IMAGE_CACHE[self.name]
             return
 
-        # Localizar
+        # Localizar archivo de imagen
         found = False
         for root, dirs, files in os.walk(CARD_IMAGES_DIR):
             for fname in files:
@@ -156,9 +159,9 @@ class Card:
         if not found:
             raise FileNotFoundError(f"No image for '{self.name}' in {CARD_IMAGES_DIR}")
 
-        # --- abrir y redimensionar manteniendo aspect ratio dentro de 80×120 ---
+        # --- abrir y redimensionar manteniendo aspect ratio dentro de CARD_DISPLAY_W×CARD_DISPLAY_H ---
         pil_img = Image.open(self.image_path).convert("RGBA")
-        DISPLAY_W, DISPLAY_H = 80, 120
+        DISPLAY_W, DISPLAY_H = CARD_DISPLAY_W, CARD_DISPLAY_H
         w, h = pil_img.size
 
         # calcular escala para caber en ambos ejes
@@ -170,7 +173,7 @@ class Card:
         new_h = int(h * scale)
         pil_resized = pil_img.resize((new_w, new_h), Image.LANCZOS)
 
-        # crear lienzo y centrar
+        # crear lienzo transparente y centrar la imagen redimensionada
         canvas = Image.new("RGBA", (DISPLAY_W, DISPLAY_H), (0, 0, 0, 0))
         x_off = (DISPLAY_W - new_w) // 2
         y_off = (DISPLAY_H - new_h) // 2
@@ -180,3 +183,4 @@ class Card:
         photo = ImageTk.PhotoImage(canvas)
         _IMAGE_CACHE[self.name] = photo
         self.tk_image = photo
+

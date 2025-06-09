@@ -8,7 +8,6 @@
 2xataque-fulminante
 3xcoliseo
 2xconstantino
-3xcorona-de-laureles
 3xespartaco
 1xexpulsion-de-titanes
 3xfestin
@@ -19,9 +18,8 @@
 3xira-ignea
 1xjulio-cesar
 1xla-ira-de-tifon
-3xlira
+7xoro
 2xpretoriano
 3xsisifo-el-hechicero
 2xtemistocles
-1xvinas
 1xyelmo-de-legionario
