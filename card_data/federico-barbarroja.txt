@@ -1,1 +1,1 @@
-[4,1,"aliados","caballero","esp","reborn"]
+[3, 2, "aliados", "caballero", "esp", "reborn"]

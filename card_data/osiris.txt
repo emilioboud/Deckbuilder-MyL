@@ -1,0 +1,1 @@
+[3, 6, "aliados", "eterno", "ddr", "reborn"]

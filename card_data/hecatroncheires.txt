@@ -1,1 +1,1 @@
-[3,3,"aliados","titan","hel","reborn"]
+[3, 3, "aliados", "titan", "hel", "reborn"]

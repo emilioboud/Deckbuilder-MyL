@@ -1,1 +1,1 @@
-[2,2,"aliados","desafiante","hdd","reborn"]
+[2, 2, "aliados", "desafiante", "hdd", "reborn"]

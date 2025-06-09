@@ -1,1 +1,1 @@
-[1,"talismanes","esp","reborn"]
+[1, "talismanes", "esp", "reborn"]

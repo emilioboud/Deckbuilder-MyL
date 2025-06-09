@@ -1,180 +1,277 @@
-import os
+#!/usr/bin/env python3
 import sys
-import ast
 import json
 from pathlib import Path
+import tkinter as tk
+from tkinter import ttk, messagebox
+from PIL import Image, ImageTk
+import ast
 
 def fetch_and_generate(card_data_dir, card_images_dir):
-    # Log file in the same directory as this script
+    # 1) Find new images
     script_dir = Path(__file__).parent
-    fetch_log_path = script_dir / "fetch_processed.log"
+    fetch_log = script_dir / "fetch_processed.log"
+    fetch_log.touch(exist_ok=True)
 
-    processed_stems = set()
-    if fetch_log_path.exists():
-        with open(fetch_log_path, "r", encoding="utf-8") as log_file:
-            processed_stems = {line.strip() for line in log_file if line.strip()}
-
-    existing_stems = {f.stem for f in card_data_dir.glob("*.txt")}
-    image_extensions = {".png", ".jpg", ".jpeg", ".gif", ".bmp"}
+    processed = {l.strip() for l in fetch_log.read_text("utf-8").splitlines() if l.strip()}
+    existing  = {p.stem for p in card_data_dir.glob("*.txt")}
+    exts      = {".png", ".jpg", ".jpeg", ".gif", ".bmp"}
 
     images = []
-    for subdir in card_images_dir.iterdir():
-        if subdir.is_dir() and subdir.name.lower() != "test":
-            for img_file in subdir.iterdir():
-                if img_file.is_file() and img_file.suffix.lower() in image_extensions:
-                    images.append(img_file)
+    for sub in card_images_dir.iterdir():
+        if sub.is_dir() and sub.name.lower() != "test":
+            for f in sub.iterdir():
+                if f.is_file() and f.suffix.lower() in exts:
+                    images.append(f)
 
-    new_images = [
-        img for img in images
-        if img.stem not in existing_stems and img.stem not in processed_stems
-    ]
-
+    new_images = [img for img in images if img.stem not in processed and img.stem not in existing]
     if not new_images:
-        print("No new images found that lack corresponding .txt files or have already been processed.")
+        print("No new images found that need processing.")
         return
 
-    for img in new_images:
-        txt_path = card_data_dir / (img.stem + ".txt")
-        try:
-            txt_path.touch(exist_ok=False)
-            print(f"Created empty file: {txt_path.name}")
-        except FileExistsError:
-            print(f"File already exists (skipping creation): {txt_path.name}")
+    # 2) Saga → raza options
+    raza_map = {
+        "hel": ["heroe", "olimpico", "titan"],
+        "hdd": ["defensor", "desafiante", "sombra"],
+        "ddr": ["faraon", "eterno", "sacerdote"],
+        "esp": ["dragon", "faerie", "caballero"],
+    }
 
-        def prompt_for_array():
-            # First element: can be integer or string; 'quit' to stop
-            first_input = input(f"Enter first element for '{img.stem}' (integer or string, or 'quit' to stop): ").strip()
-            if first_input.lower() == "quit":
-                sys.exit(0)
+    # 3) Build GUI
+    root = tk.Tk()
+    root.title("Card Data Entry")
+
+    # Maximize window
+    try:
+        root.state('zoomed')
+    except:
+        root.attributes('-zoomed', True)
+
+    screen_w = root.winfo_screenwidth()
+    screen_h = root.winfo_screenheight()
+
+    # Define fonts
+    LABEL_FONT   = ("Arial", 16)
+    ENTRY_FONT   = ("Arial", 16)
+    COMBO_FONT   = ("Arial", 16)
+    BUTTON_FONT  = ("Arial", 16)
+
+    # Configure ttk styles for Combobox and Buttons
+    style = ttk.Style(root)
+    style.configure("TCombobox", font=COMBO_FONT)
+    style.configure("TButton",   font=BUTTON_FONT)
+
+    state = {"idx": 0, "photo": None}
+
+    # Layout frames
+    top    = tk.Frame(root); top.grid(row=0, column=0, padx=20, pady=20)
+    left   = tk.Frame(top); left.grid(row=0, column=0)
+    right  = tk.Frame(top); right.grid(row=0, column=1, padx=(40,0))
+    bottom = tk.Frame(root); bottom.grid(row=1, column=0, pady=20)
+
+    # Image display
+    img_label = tk.Label(left)
+    img_label.pack()
+
+    # Form fields (Tipo first)
+    tk.Label(right, text="Tipo:",   font=LABEL_FONT).grid(row=0, column=0, sticky="e", pady=5)
+    tipo_cb = ttk.Combobox(
+        right,
+        values=["aliados","talismanes","totems","armas","oros"],
+        state="readonly",
+        width=25
+    )
+    tipo_cb.grid(row=0, column=1, pady=5)
+
+    tk.Label(right, text="Coste:",  font=LABEL_FONT).grid(row=1, column=0, sticky="e", pady=5)
+    coste_e = tk.Entry(right, state="disabled", font=ENTRY_FONT, width=27)
+    coste_e.grid(row=1, column=1, pady=5)
+
+    tk.Label(right, text="Fuerza:", font=LABEL_FONT).grid(row=2, column=0, sticky="e", pady=5)
+    fuerza_e = tk.Entry(right, state="disabled", font=ENTRY_FONT, width=27)
+    fuerza_e.grid(row=2, column=1, pady=5)
+
+    tk.Label(right, text="Saga:",   font=LABEL_FONT).grid(row=3, column=0, sticky="e", pady=5)
+    saga_cb = ttk.Combobox(
+        right,
+        values=list(raza_map.keys()),
+        state="readonly",
+        width=25
+    )
+    saga_cb.grid(row=3, column=1, pady=5)
+
+    tk.Label(right, text="Raza:",   font=LABEL_FONT).grid(row=4, column=0, sticky="e", pady=5)
+    raza_cb = ttk.Combobox(right, values=[], state="disabled", width=25)
+    raza_cb.grid(row=4, column=1, pady=5)
+
+    tk.Label(right, text="Formato:", font=LABEL_FONT).grid(row=5, column=0, sticky="e", pady=5)
+    formato_e = tk.Entry(right, state="readonly", font=ENTRY_FONT, width=27)
+    formato_e.grid(row=5, column=1, pady=5)
+    formato_e.insert(0, "reborn")
+
+    # 4) Enable/disable per Tipo (do not reset Saga)
+    def on_tipo_change(event=None):
+        t = tipo_cb.get()
+        coste_e.delete(0, tk.END)
+        fuerza_e.delete(0, tk.END)
+        raza_cb.set("")
+        if t == "aliados":
+            coste_e.config(state="normal")
+            fuerza_e.config(state="normal")
+            saga_cb.config(state="readonly")
+            raza_cb.config(state="readonly")
+        elif t in {"talismanes","totems","armas"}:
+            coste_e.config(state="normal")
+            fuerza_e.config(state="disabled")
+            saga_cb.config(state="readonly")
+            raza_cb.config(state="disabled")
+        elif t == "oros":
+            coste_e.config(state="disabled")
+            fuerza_e.config(state="disabled")
+            saga_cb.config(state="readonly")
+            raza_cb.config(state="disabled")
+
+    tipo_cb.bind("<<ComboboxSelected>>", on_tipo_change)
+
+    def on_saga_change(event=None):
+        saga = saga_cb.get()
+        raza_cb['values'] = raza_map.get(saga, [])
+        if raza_cb.cget("state") == "readonly":
+            raza_cb.set("")
+
+    saga_cb.bind("<<ComboboxSelected>>", on_saga_change)
+
+    # 5) Show each card (resize up to 70% width, 80% height)
+    def show_card():
+        idx = state['idx']
+        img = new_images[idx]
+        pil = Image.open(img)
+        w, h = pil.size
+        max_w = int(screen_w * 0.7)
+        max_h = int(screen_h * 0.8)
+        ratio = min(max_w / w, max_h / h)
+        pil = pil.resize((int(w*ratio), int(h*ratio)), resample=Image.LANCZOS)
+
+        photo = ImageTk.PhotoImage(pil)
+        state['photo'] = photo
+        img_label.config(image=photo)
+        root.title(f"Card {idx+1}/{len(new_images)}: {img.stem}")
+
+    show_card()
+
+    # 6) Navigation & saving
+    def next_card():
+        if state['idx'] + 1 >= len(new_images):
+            messagebox.showinfo("Done", "All cards processed.")
+            root.destroy()
+        else:
+            state['idx'] += 1
+            show_card()
+
+    def save_and_next():
+        t = tipo_cb.get().strip()
+        if not t:
+            return messagebox.showerror("Missing", "Please choose a Tipo.")
+
+        s = saga_cb.get().strip()
+        if not s:
+            return messagebox.showerror("Missing", "Please choose a Saga.")
+
+        fmt = "reborn"
+        arr = []
+
+        if t == "aliados":
             try:
-                first_elem = int(first_input)
+                c = int(coste_e.get()); f = int(fuerza_e.get())
             except ValueError:
-                # First element is a string → return single-element array
-                return [first_input]
+                return messagebox.showerror("Invalid", "Coste & Fuerza must be integers.")
+            r = raza_cb.get().strip()
+            if not r:
+                return messagebox.showerror("Missing", "Please choose a Raza.")
+            arr = [c, f, t, r, s, fmt]
 
-            # Second element: can be integer or string; 'quit' to stop
-            second_input = input(f"Enter second element for '{img.stem}' (integer or string, or 'quit' to stop): ").strip()
-            if second_input.lower() == "quit":
-                sys.exit(0)
-
+        elif t in {"talismanes","totems","armas"}:
             try:
-                second_elem = int(second_input)
-                # If second is integer, autofill third with "Aliados" and prompt for fourth
-                third_elem = "Aliados"
-                fourth_input = input(f"Enter fourth element for '{img.stem}' (string, or 'quit' to stop): ").strip()
-                if fourth_input.lower() == "quit":
-                    sys.exit(0)
-                if not fourth_input:
-                    print("  Fourth element cannot be empty. Skipping this image.")
-                    return []
-
-                return [first_elem, second_elem, third_elem, fourth_input]
-
+                c = int(coste_e.get())
             except ValueError:
-                # Second element is a string → return [first_elem, second_elem]
-                return [first_elem, second_input]
+                return messagebox.showerror("Invalid", "Coste must be an integer.")
+            arr = [c, t, s, fmt]
 
-        array = prompt_for_array()
-        if array == []:
-            # Skip this image: delete the .txt so it will be retried next run
-            try:
-                txt_path.unlink()
-                print(f"Skipped '{img.stem}'. File deleted, will be retried on next run.\n")
-            except Exception as e:
-                print(f"Error deleting file '{txt_path.name}': {e}")
-            continue
+        elif t == "oros":
+            arr = [t, s, fmt]
 
-        # Write array as JSON (strings automatically quoted)
-        new_content = json.dumps(array, separators=(",", ":"), ensure_ascii=False)
-        try:
-            with open(txt_path, "w", encoding="utf-8") as f:
-                f.write(new_content)
-            print(f"  → Written to {txt_path.name}: {new_content}\n")
-            # Log this stem as processed
-            with open(fetch_log_path, "a", encoding="utf-8") as log_file:
-                log_file.write(f"{img.stem}\n")
-        except Exception as e:
-            print(f"  Error writing to file {txt_path.name}: {e}")
-            print("  Please try again.")
+        else:
+            return messagebox.showerror("Invalid", "Unknown Tipo.")
 
+        stem = new_images[state['idx']].stem
+        out = card_data_dir / f"{stem}.txt"
+        with open(out, "w", encoding="utf-8") as fo:
+            json.dump(arr, fo, ensure_ascii=False)
+        with open(fetch_log, "a", encoding="utf-8") as lg:
+            lg.write(stem + "\n")
+
+        next_card()
+
+    def skip_and_next():
+        next_card()
+
+    # 7) Buttons (separate frame)
+    btn_w = 20
+    tk.Button(bottom, text="Save & Next", width=btn_w, font=BUTTON_FONT, command=save_and_next).pack(side="left", padx=10)
+    tk.Button(bottom, text="Skip",       width=btn_w, font=BUTTON_FONT, command=skip_and_next).pack(side="left", padx=10)
+    tk.Button(bottom, text="Quit",       width=btn_w, font=BUTTON_FONT, command=root.destroy).pack(side="left", padx=10)
+
+    root.mainloop()
 
 def add_raza(card_data_dir):
     all_txts = list(card_data_dir.glob("*.txt"))
     if not all_txts:
-        print("No .txt files found in card_data directory.")
+        print("No .txt files found.")
         return
 
-    for txt_path in all_txts:
-        stem = txt_path.stem
+    for txt in all_txts:
+        content = txt.read_text("utf-8").strip()
+        if not content:
+            continue
         try:
-            with open(txt_path, "r", encoding="utf-8") as f:
-                content_str = f.read().strip()
-            if not content_str:
-                continue
+            arr = ast.literal_eval(content)
+        except Exception:
+            print(f"Could not parse {txt.name}; skipping.")
+            continue
+        if not (isinstance(arr, list) and len(arr) < 4 and "Aliados" in arr):
+            continue
 
-            try:
-                array = ast.literal_eval(content_str)
-            except (ValueError, SyntaxError):
-                print(f"Warning: Could not parse contents of {txt_path.name}. Skipping.")
-                continue
+        print(f"\n{txt.name} → {arr}")
+        new_el = input("Enter a new element (or 'quit'): ").strip()
+        if new_el.lower() == "quit":
+            sys.exit(0)
+        if not new_el:
+            print("No input; skip.")
+            continue
 
-            # Skip if array already has 4 or more elements
-            if isinstance(array, list) and len(array) >= 4:
-                continue
-
-            if "Aliados" in array:
-                print(f"\nFile '{txt_path.name}' contains 'Aliados' in its array: {array}")
-                new_element = input(f"Enter a new element to add to '{txt_path.name}' (or 'quit' to stop): ").strip()
-                if new_element.lower() == "quit":
-                    sys.exit(0)
-                if not new_element:
-                    print("  No input provided. Skipping this file.")
-                    continue
-
-                array.append(new_element)
-                new_content = json.dumps(array, separators=(",", ":"), ensure_ascii=False)
-                with open(txt_path, "w", encoding="utf-8") as f:
-                    f.write(new_content)
-                print(f"  → Updated {txt_path.name}: {new_content}")
-        except Exception as e:
-            print(f"Error handling file {txt_path.name}: {e}")
-
+        arr.append(new_el)
+        txt.write_text(json.dumps(arr, separators=",", ensure_ascii=False), encoding="utf-8")
+        print(f"Updated {txt.name}: {arr}")
 
 def main():
-    # Derive project root from this script's location
     script_dir = Path(__file__).parent
-    project_root = script_dir.parent  # deckbuilder folder
-
-    # Relative paths under project root
-    card_data_dir = project_root / "card_data"
-    card_images_dir = project_root / "card_images"
-
-    if not card_data_dir.exists():
-        print(f"Error: Card data directory does not exist: {card_data_dir}")
-        sys.exit(1)
-    if not card_images_dir.exists():
-        print(f"Error: Card images directory does not exist: {card_images_dir}")
-        sys.exit(1)
+    project_root = script_dir.parent
+    cd = project_root / "card_data"
+    ci = project_root / "card_images"
+    if not cd.exists() or not ci.exists():
+        print("card_data or card_images missing."); sys.exit(1)
 
     while True:
-        choice = input(
-            "Choose mode:\n"
-            "  1) fetch and generate\n"
-            "  2) add raza\n"
-            "Enter '1' or '2' (or type 'quit' to exit): "
-        ).strip()
-        if choice.lower() == "quit":
-            print("Exiting script.")
+        choice = input("Mode: 1) GUI  2) add raza  (or 'quit'): ").strip().lower()
+        if choice == "quit":
             sys.exit(0)
-        elif choice == "1":
-            fetch_and_generate(card_data_dir, card_images_dir)
+        if choice == "1":
+            fetch_and_generate(cd, ci)
             break
-        elif choice == "2":
-            add_raza(card_data_dir)
+        if choice == "2":
+            add_raza(cd)
             break
-        else:
-            print("Invalid choice. Please enter '1', '2', or 'quit'.")
-
+        print("Enter 1, 2 or quit.")
 
 if __name__ == "__main__":
     main()

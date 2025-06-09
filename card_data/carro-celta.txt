@@ -1,0 +1,1 @@
+[0, "armas", "hdd", "reborn"]

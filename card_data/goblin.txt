@@ -1,1 +1,1 @@
-[2,2,"aliados","faerie","esp","reborn"]
+[2, 2, "aliados", "faerie", "esp", "reborn"]

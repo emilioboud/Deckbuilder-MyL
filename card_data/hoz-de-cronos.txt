@@ -1,1 +1,1 @@
-[4,"armas","hel","reborn"]
+[3, "armas", "hel", "reborn"]

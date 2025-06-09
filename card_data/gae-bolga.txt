@@ -1,1 +1,1 @@
-[2,"armas","hdd","reborn"]
+[2, "armas", "hdd", "reborn"]
