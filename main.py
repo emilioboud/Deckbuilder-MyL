@@ -192,6 +192,8 @@ current_format = None
 # 9) FUNCIONES AUXILIARES DE VALIDACIÓN Y FILTRADO
 # =============================================================================
 def is_card_valid_for_filters(name):
+    if name.lower() == "oro":
+        return True
     if current_saga is None or current_race is None or current_format is None:
         return False
     carta = ALL_CARDS[name]
@@ -204,19 +206,33 @@ def is_card_valid_for_filters(name):
     return True
 
 def can_add_card(name, qty):
+    internal = name.lower()
+    # ── SPECIAL CASE: unlimited "oro" ──
+    if internal == "oro":
+        total_actual = deck.total_cards()
+        if total_actual + qty > 50:
+            return False, "La baraja no puede exceder 50 cartas."
+        return True, ""
+
+    # ── NORMAL CASE FOR ALL OTHER CARDS ──
     if current_saga is None or current_race is None or current_format is None:
         return False, "Debes elegir Saga, Raza y Formato primero."
+
     carta = ALL_CARDS[name]
     if not is_card_valid_for_filters(name):
         return False, "Esta carta no cumple los filtros de Saga/Raza/Formato."
+
     total_actual = deck.total_cards()
     if total_actual + qty > 50:
         return False, "La baraja no puede exceder 50 cartas."
+
     max_allowed = restricted_limits.get(name, CARD_MAX_DEFAULT)
     ya_tengo = deck.card_counts.get(name, 0)
     if ya_tengo + qty > max_allowed:
         return False, f"No puedes tener más de {max_allowed} copias de '{name}'."
+
     return True, ""
+
 
 def update_stats():
     total_cost = 0
@@ -732,7 +748,7 @@ def on_saga_change(*args):
     if sel == "Seleccione":
         current_saga = None
     else:
-        invalidas = [n for n in deck.card_counts if ALL_CARDS[n].saga != sel]
+        invalidas = [n for n in deck.card_counts if n.lower() != "oro" and ALL_CARDS[n].saga != sel]
         if invalidas and deck.total_cards() > 0:
             if deck.is_saved:
                 if messagebox.askyesno("Cartas inválidas",
@@ -805,7 +821,7 @@ def on_format_change(*args):
         current_format = None
     else:
         lowercase = sel.lower()
-        invalidas = [n for n in deck.card_counts if ALL_CARDS[n].format != lowercase]
+        invalidas = [n for n in deck.card_counts if n.lower() != "oro" and ALL_CARDS[n].format != lowercase]
         if invalidas and deck.total_cards() > 0:
             if deck.is_saved:
                 if messagebox.askyesno("Cartas inválidas",
