@@ -332,6 +332,13 @@ def update_mana_curve():
             cost_category_counts[card.cost][card.category] += cnt
 
     curve_canvas.delete("all")
+    # ── draw horizontal divider above cost labels ──
+    CANVAS_W = int(curve_canvas.cget("width"))
+    CANVAS_H = int(curve_canvas.cget("height"))
+    MARGIN_Y = 20
+    y_div = CANVAS_H - MARGIN_Y
+    curve_canvas.create_line(0, y_div, CANVAS_W, y_div, fill="black", width=2)
+
     CANVAS_W = int(curve_canvas.cget("width"))
     CANVAS_H = int(curve_canvas.cget("height"))
     MARGIN_X = 20
@@ -1347,29 +1354,34 @@ search_canvas.grid(row=1, column=0, sticky="nsew")
 _search_interior = tk.Frame(search_canvas, bg=BG_DEFAULT)
 search_canvas.create_window((0,0), window=_search_interior, anchor="nw")
 
+def _on_search_enter(ev):
+    search_canvas.bind_all(
+        "<MouseWheel>",
+        lambda e: search_canvas.yview_scroll(int(-1*(e.delta/120)), "units")
+    )
+
+def _on_search_leave(ev):
+    search_canvas.unbind_all("<MouseWheel>")
+
 def _on_search_configure(event):
     search_canvas.configure(scrollregion=search_canvas.bbox("all"))
+
 _search_interior.bind("<Configure>", _on_search_configure)
+_search_interior.bind("<Enter>", _on_search_enter)
+_search_interior.bind("<Leave>", _on_search_leave)
 
 # mapping from widget → card name
 _search_id_to_name = {}
 
 # 5) Populate function
 def refresh_search():
-    # clear old thumbnails
     for w in _search_interior.winfo_children():
         w.destroy()
     _search_id_to_name.clear()
 
-    # debug: show current filter state
-    print(f"[DEBUG] Filters → Saga={current_saga}, Raza={current_race}, Formato={current_format}, Tipo={tipo_var.get()}, Orden={orden_var.get()}")
-
-    # only build grid once all four filters are chosen
     if not (current_saga and current_race and current_format and tipo_var.get() != "Tipo"):
-        print("[DEBUG] Not all filters set; skipping grid build")
         return
 
-    # map singular menu choice → internal plural category
     tipo_map = {
         "Aliado":   "Aliados",
         "Talisman": "Talismanes",
@@ -1378,92 +1390,79 @@ def refresh_search():
         "Oro":      "Oros"
     }
     cat_filter = tipo_map.get(tipo_var.get(), None)
-    print(f"[DEBUG] Category filter → {cat_filter}")
 
-    # gather & filter
     names = []
     for nm, card in ALL_CARDS.items():
         if card.saga   != current_saga:    continue
         if card.format != current_format:  continue
-        if cat_filter and card.category != cat_filter:
-            continue
-        if card.category == "Aliados" and card.race != current_race:
-            continue
+        if cat_filter and card.category != cat_filter: continue
+        if card.category == "Aliados" and card.race != current_race: continue
         names.append(nm)
 
-    print(f"[DEBUG] {len(names)} cards passed initial filters")
-
-    # sort
     if orden_var.get() == "Coste":
         names.sort(key=lambda n: ALL_CARDS[n].cost or 0)
     elif orden_var.get() == "Fuerza":
         names.sort(key=lambda n: ALL_CARDS[n].strength or 0)
-    else:  # Alfabético
+    else:
         names.sort()
-    print(f"[DEBUG] First 5 after sort: {names[:5]}")
 
-    # draw in 5-col grid with smaller gaps
     cols, gap = 5, 2
     bg_color = _search_interior.cget("bg")
     for idx, nm in enumerate(names):
-        card = ALL_CARDS[nm]
-        thumb = _get_thumb(card)
+        thumb = _get_thumb(ALL_CARDS[nm])
         row, col = divmod(idx, cols)
-
-        lbl = tk.Label(
-            _search_interior,
-            image=thumb,
-            bg=bg_color,
-            cursor="hand2"
-        )
+        lbl = tk.Label(_search_interior, image=thumb, bg=bg_color, cursor="hand2")
         lbl.image = thumb
         lbl.grid(row=row, column=col, padx=gap, pady=gap)
-
         _search_id_to_name[lbl] = nm
-        lbl.bind("<ButtonPress-1>",  start_search_drag)
-        lbl.bind("<B1-Motion>",      on_search_drag)
-        lbl.bind("<ButtonRelease-1>", on_search_release)
+        lbl.bind("<ButtonPress-1>", start_search_drag)
 
-    print("[DEBUG] Grid built successfully")
-
-# dynamic refresh on filter changes
 tipo_menu.bind("<<ComboboxSelected>>", lambda e: refresh_search())
 orden_menu.bind("<<ComboboxSelected>>", lambda e: refresh_search())
-# also call refresh_search() at the end of on_saga_change, on_race_change, on_format_change
 
-# 6) Drag & Drop handlers
+# ── Drag & Drop support for Card Search ───────────────────────────────────────
 _drag_data = {"widget": None, "card": None}
 
 def start_search_drag(ev):
     lbl = ev.widget
     card_name = _search_id_to_name.get(lbl)
-    if not card_name: return
+    if not card_name:
+        return
 
-    _drag_data["widget"] = tk.Label(root, image=lbl.image)
-    _drag_data["widget"].image = lbl.image
-    _drag_data["widget"].place(x=ev.x_root-40, y=ev.y_root-60)
+    floater = tk.Label(root, image=lbl.image, bg=root.cget("bg"))
+    floater.image = lbl.image
+    _drag_data["widget"] = floater
     _drag_data["card"]   = card_name
 
+    floater.place(x=ev.x_root - THUMB_W//2, y=ev.y_root - THUMB_H//2)
+    root.bind("<B1-Motion>", on_search_drag)
+    root.bind("<ButtonRelease-1>", on_search_release)
+
 def on_search_drag(ev):
-    w = _drag_data["widget"]
-    if w:
-        w.place(x=ev.x_root-40, y=ev.y_root-60)
+    floater = _drag_data["widget"]
+    if floater:
+        floater.place(x=ev.x_root - THUMB_W//2, y=ev.y_root - THUMB_H//2)
 
 def on_search_release(ev):
-    w = _drag_data["widget"]
-    card = _drag_data["card"]
-    if w:
-        # figure out which widget is under the cursor on release
+    floater = _drag_data["widget"]
+    card    = _drag_data["card"]
+
+    root.unbind("<B1-Motion>")
+    root.unbind("<ButtonRelease-1>")
+
+    if floater:
+        floater.place_forget()
+        root.update_idletasks()
+
         tgt = root.winfo_containing(ev.x_root, ev.y_root)
-        # walk up the parent chain to see if we're inside deck_canvas
-        inside_deck = False
+        inside_left = False
         while tgt:
-            if tgt == deck_canvas:
-                inside_deck = True
+            if tgt is left_container:
+                inside_left = True
                 break
             tgt = getattr(tgt, "master", None)
 
-        if inside_deck:
+        if inside_left:
             ok, reason = can_add_card(card, 1)
             if ok:
                 deck.add_card(card, 1)
@@ -1475,8 +1474,7 @@ def on_search_release(ev):
             else:
                 messagebox.showwarning("No permitido", reason)
 
-        # remove the floating thumbnail
-        w.destroy()
+        floater.destroy()
 
     _drag_data["widget"] = None
     _drag_data["card"]   = None
@@ -1538,49 +1536,57 @@ def _show_card_overlay(card_name: str):
 
     card = ALL_CARDS[card_name]
 
-    # capa sobre right_panel
+    # full-overlay container
     _overlay = tk.Frame(right_panel, bg=right_panel.cget("bg"))
     _overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
 
-    ttk.Button(_overlay, text="❌  Cerrar", command=_close_overlay
-               ).pack(anchor="ne", padx=6, pady=6)
+    # close button
+    ttk.Button(_overlay, text="❌  Cerrar", command=_close_overlay)\
+        .pack(anchor="ne", padx=6, pady=6)
 
-    # ---------- imagen grande ----------
+    # ── bordered image ──
     img_path = _find_image(card_name)
     try:
         pil = Image.open(img_path) if img_path else None
-    except Exception:
+    except:
         pil = None
-    if pil is None:                       # fallback: miniatura ampliada
+    if pil is None:
         pil = card.tk_image._PhotoImage__photo.zoom(3)
-
     pil = pil.resize((507, 727), Image.LANCZOS)
     big = ImageTk.PhotoImage(pil)
-    tk.Label(_overlay, image=big, bg=_overlay.cget("bg")
-             ).pack(pady=10)
-    # mantener referencia
+
+    img_frame = tk.Frame(_overlay, bd=2, relief="solid")
+    img_frame.pack(pady=10)
+    tk.Label(img_frame, image=big).pack()
     _overlay.big_ref = big
 
-    # ---------- stats ----------
-    singular = {
-        "aliados": "Aliado", "talismanes": "Talisman",
-        "totems": "Totem",  "armas": "Arma", "oros": "Oro"
-    }
-    lines = []
+    # ── stats grid with vertical divider ──
+    stats = []
     if card.cost is not None:
-        lines.append(f"Coste  : {card.cost}")
+        stats.append(("Coste", str(card.cost)))
     if getattr(card, "strength", None) is not None:
-        lines.append(f"Fuerza : {card.strength}")
-    cat = getattr(card, "category", "").lower()
-    lines.append(f"Tipo   : {singular.get(cat, card.category.title())}")
+        stats.append(("Fuerza", str(card.strength)))
+    stats.append(("Tipo", card.category))
     if getattr(card, "race", None):
-        lines.append(f"Raza   : {card.race.title()}")
+        stats.append(("Raza", card.race.title()))
 
-    tk.Label(_overlay, text="\n".join(lines),
-             font=("Tahoma", 20, "bold"),
-             bg=_overlay.cget("bg")
-             ).pack(pady=(0, 18))
+    stats_frame = tk.Frame(_overlay, bg=_overlay.cget("bg"))
+    stats_frame.pack(pady=(0,18))
 
+    # configure two columns + separator
+    stats_frame.grid_columnconfigure(0, weight=1, pad=10)
+    stats_frame.grid_columnconfigure(2, weight=1, pad=10)
+    sep = ttk.Separator(stats_frame, orient="vertical")
+    sep.grid(row=0, column=1, rowspan=len(stats), sticky="ns", padx=5)
+
+    param_font = ("Tahoma", 14, "bold")
+    value_font = ("Tahoma", 12, "bold")
+
+    for i, (param, val) in enumerate(stats):
+        tk.Label(stats_frame, text=param + ":", font=param_font,
+                 bg=stats_frame.cget("bg")).grid(row=i, column=0, sticky="e")
+        tk.Label(stats_frame, text=val, font=value_font,
+                 bg=stats_frame.cget("bg")).grid(row=i, column=2, sticky="w")
 
 def show_detail_on_middle_click(event):
     item = event.widget.find_withtag("current")
