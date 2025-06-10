@@ -717,7 +717,7 @@ def simulate_1000_hands():
 # =============================================================================
 def set_background_color_for_saga(saga):
     global _bg_full
-    # 1) saga color map
+    # Mapear saga a color si lo tenías; por ejemplo:
     if saga == "Hijos de Daana":
         color = "#37eca5"
     elif saga == "Helenica":
@@ -725,80 +725,70 @@ def set_background_color_for_saga(saga):
     elif saga == "Espada Sagrada":
         color = "#acbcf7"
     elif saga == "Dominios de Ra":
-        color = "#FFFC90"
+        color = "#F1D154"
     else:
         color = BG_DEFAULT
 
-    # 2) swap in the right deck-bg PIL image
+    # Actualizar imagen de fondo
     _bg_full = bg_full_images.get(saga)
-
-    # 3) refresh the canvas background
     _draw_deck_bg()
 
-    # 4) rest of your UI-color tweaks
+    # Resto de ajustes de color en UI...
     root.configure(bg=color)
     left_container.configure(bg=color)
     right_panel.configure(bg=color)
-
     summary_frame.configure(bg=color)
     stats_frame.configure(bg=color)
-    dropdown_frame.configure(bg=color)
-
     deck_canvas.configure(bg=color)
     curve_canvas.configure(bg="#e0e0e0")
     deal_canvas.configure(bg=color)
-
     sim_frame.configure(bg=color)
     hand_frame.configure(bg=color)
     consistency_frame.configure(bg=color)
-
-    lbl_saga   .configure(bg=color)
-    lbl_raza   .configure(bg=color)
+    lbl_saga.configure(bg=color)
+    lbl_raza.configure(bg=color)
     lbl_formato.configure(bg=color)
-
-    saga_menu   .configure(bg=color)
-    race_menu   .configure(bg=color)
-    format_menu .configure(bg=color)
-
-    saga_menu  ["menu"].configure(bg=color)
-    race_menu  ["menu"].configure(bg=color)
+    saga_menu.configure(bg=color)
+    race_menu.configure(bg=color)
+    format_menu.configure(bg=color)
+    saga_menu["menu"].configure(bg=color)
+    race_menu["menu"].configure(bg=color)
     format_menu["menu"].configure(bg=color)
-
-    qty_menu    .configure(bg=color)
-    deck_option .configure(bg=color)
-    card_entry  .configure(bg="white")
+    qty_menu.configure(bg=color)
+    deck_option.configure(bg=color)
+    card_entry.configure(bg="white")
 
 # =============================================================================
 # Callbacks y helpers para Saga / Raza / Formato (con highlight al final)
 # =============================================================================
 def update_label_highlight():
-    # Saga not chosen
+    # Ninguna saga elegida
     if saga_var.get() == "Seleccione":
-        lbl_saga   .config(fg="red")
-        lbl_raza   .config(fg=BG_DEFAULT)
-        lbl_formato.config(fg=BG_DEFAULT)
-    # Saga chosen, Raza not chosen
+        lbl_saga.config(fg="red")
+        lbl_raza.config(fg="grey")
+        lbl_formato.config(fg="grey")
+    # Saga elegida, falta raza
     elif race_var.get() == "Seleccione":
-        lbl_saga   .config(fg="black")
-        lbl_raza   .config(fg="red")
-        lbl_formato.config(fg=BG_DEFAULT)
-    # Saga & Raza chosen, Formato not chosen → only left to pick
+        lbl_saga.config(fg="black")
+        lbl_raza.config(fg="red")
+        lbl_formato.config(fg="grey")
+    # Saga y raza elegidas, falta formato
     elif format_var.get() == "Seleccione":
-        lbl_saga   .config(fg="black")
-        lbl_raza   .config(fg="black")
+        lbl_saga.config(fg="black")
+        lbl_raza.config(fg="black")
         lbl_formato.config(fg="red")
-    # All chosen
+    # Todo elegido
     else:
-        lbl_saga   .config(fg="black")
-        lbl_raza   .config(fg="black")
+        lbl_saga.config(fg="black")
+        lbl_raza.config(fg="black")
         lbl_formato.config(fg="black")
 
 def on_saga_change(*args):
     global current_saga, current_race, current_format
-    sel = saga_var.get()
+    sel = saga_var.get().strip()
     card_entry.delete(0, tk.END)
 
-    # al cambiar Saga, reseteamos Raza y Formato
+    # Resetear Raza y Formato
     current_race = None
     race_var.set("Seleccione")
     race_menu.config(state="disabled")
@@ -806,21 +796,16 @@ def on_saga_change(*args):
     format_var.set("Seleccione")
     format_menu.config(state="disabled")
 
-    # si no hay saga válida, limpiamos el fondo
     if sel == "Seleccione":
         current_saga = None
         set_background_color_for_saga(None)
     else:
-        # si hay cartas inválidas, preguntar para guardar y limpiar
-        invalidas = [
-            n for n in deck.card_counts
-            if n.lower() != "oro" and ALL_CARDS[n].saga != sel
-        ]
-        if invalidas and deck.total_cards() > 0:
+        # Limpiar cartas inválidas de otra saga
+        inval = [n for n in deck.card_counts if n.lower() != "oro" and ALL_CARDS[n].saga != sel]
+        if inval and deck.total_cards() > 0:
             if deck.is_saved and messagebox.askyesno(
                 "Cartas inválidas",
-                "Tu baraja contiene cartas que no pertenecen a la saga seleccionada.\n"
-                "¿Deseas guardar antes de vaciarla?"
+                "Tu baraja contiene cartas de otra saga.\n¿Deseas guardar antes de vaciarla?"
             ):
                 save_deck_gui()
             deck.card_counts.clear()
@@ -829,16 +814,15 @@ def on_saga_change(*args):
         current_saga = sel
         set_background_color_for_saga(sel)
 
-        # poblar opciones de Raza para la saga elegida
+        # Poblar menú de Raza y habilitarlo
         menu = race_menu["menu"]
         menu.delete(0, "end")
         menu.add_command(label="Seleccione", command=lambda: race_var.set("Seleccione"))
         for raza in RACES_BY_SAGA[sel]:
-            disp = raza.capitalize()
-            menu.add_command(label=disp, command=lambda v=disp: race_var.set(v))
+            display = raza.capitalize()
+            menu.add_command(label=display, command=lambda v=display: race_var.set(v))
         race_menu.config(state="normal")
 
-    # actualizar toda la UI
     update_category_summary()
     update_mana_curve()
     update_deck_display()
@@ -846,40 +830,32 @@ def on_saga_change(*args):
     update_stats()
     update_label_highlight()
 
-
 def on_race_change(*args):
     global current_race, current_format
-    sel = race_var.get()
+    sel = race_var.get().strip()
     card_entry.delete(0, tk.END)
 
-    # al cambiar Raza, reseteamos Formato
     current_format = None
     format_var.set("Seleccione")
     format_menu.config(state="disabled")
 
-    # si no hay raza válida, salimos
     if sel == "Seleccione":
         current_race = None
     else:
-        # limpiar Aliados de otra raza si es necesario
-        sel_low = sel.lower()
-        invalidas = [
-            n for n in deck.card_counts
-            if ALL_CARDS[n].category == "Aliados" and ALL_CARDS[n].race != sel_low
-        ]
-        if invalidas and deck.total_cards() > 0:
+        inval = [n for n in deck.card_counts
+                 if ALL_CARDS[n].category == "Aliados" and ALL_CARDS[n].race != sel.lower()]
+        if inval and deck.total_cards() > 0:
             if deck.is_saved and messagebox.askyesno(
                 "Cartas inválidas",
-                "Tu baraja contiene Aliados de otra raza.\n"
-                "¿Deseas guardar antes de vaciarla?"
+                "Tu baraja contiene Aliados de otra raza.\n¿Deseas guardar antes de vaciarla?"
             ):
                 save_deck_gui()
             deck.card_counts.clear()
             deck.is_saved = False
 
-        current_race = sel_low
+        current_race = sel.lower()
 
-        # poblar opciones de Formato
+        # Poblar Formato y habilitarlo
         menu = format_menu["menu"]
         menu.delete(0, "end")
         menu.add_command(label="Seleccione", command=lambda: format_var.set("Seleccione"))
@@ -887,14 +863,12 @@ def on_race_change(*args):
             menu.add_command(label=fmt, command=lambda v=fmt: format_var.set(v))
         format_menu.config(state="normal")
 
-    # actualizar toda la UI
     update_category_summary()
     update_mana_curve()
     update_deck_display()
     update_consistency()
     update_stats()
     update_label_highlight()
-
 
 def on_format_change(*args):
     global current_format
@@ -935,286 +909,183 @@ def on_format_change(*args):
 # CONFIGURACIÓN DE LA INTERFAZ (GUI)
 # =============================================================================
 root = tk.Tk()
+
+# Cargar y redimensionar imágenes para ImageButton (asegúrate de que UI_IMAGES_DIR esté definido)
 BTN_W, BTN_H = 120, 30
-# load & resize the default state
 _raw = Image.open(os.path.join(UI_IMAGES_DIR, "button.png"))
 _resized = _raw.resize((BTN_W, BTN_H), Image.LANCZOS)
 button_img = ImageTk.PhotoImage(_resized)
-
-# load & resize the pressed state
 _raw2 = Image.open(os.path.join(UI_IMAGES_DIR, "button_pressed.png"))
 _resized2 = _raw2.resize((BTN_W, BTN_H), Image.LANCZOS)
 button_pressed_img = ImageTk.PhotoImage(_resized2)
+
 root.title("Mitos y Leyendas: Constructor de Barajas")
 BG_DEFAULT = "#d3d3d3"
 root.configure(bg=BG_DEFAULT)
 root.geometry("1200x970")
 
-# Después de crear root y left_container...
+# =============================================================================
+# Containers principales: left_container, divider, right_panel
+# =============================================================================
 left_container = tk.Frame(root, bg=BG_DEFAULT)
 divider        = tk.Frame(root, bg="black", width=4)
 right_panel    = tk.Frame(root, bg=BG_DEFAULT)
 
-left_container.grid(row=0, column=0, rowspan=4, sticky="nsew")
+# Posicionar en grid:
+left_container.grid(row=0, column=0, rowspan=4, sticky="nw")
 divider       .grid(row=0, column=1, rowspan=4, sticky="ns")
 right_panel   .grid(row=0, column=2, rowspan=4, sticky="nsew")
 
-# Ajustar pesos: columna 0 (deck canvas) expande, columna 1 (summary) no
+# Configurar pesos en root:
 root.grid_columnconfigure(0, weight=0)  # left_container fijo
-root.grid_columnconfigure(1, weight=0)  # divider fijo (ancho fijo que hayas dado)
-root.grid_columnconfigure(2, weight=1)
+root.grid_columnconfigure(1, weight=0)  # divider fijo
+root.grid_columnconfigure(2, weight=1)  # right_panel absorbe sobrante
 root.grid_rowconfigure(0, weight=1)
 root.grid_rowconfigure(1, weight=1)
 root.grid_rowconfigure(2, weight=1)
 root.grid_rowconfigure(3, weight=1)
 
-# Dentro de left_container: dos columnas: canvas (col 0) y summary_frame (col 1)
-left_container.grid_columnconfigure(0, weight=0)  # canvas tiene tamaño fijo
-left_container.grid_columnconfigure(1, weight=0)  # summary_frame también se mantiene en su ancho mínimo
-left_container.grid_rowconfigure(0, weight=1)
-left_container.grid_rowconfigure(1, weight=0)
-left_container.grid_rowconfigure(2, weight=0)
-left_container.grid_rowconfigure(3, weight=0)
-
-right_panel.grid_columnconfigure(0, weight=1)
-right_panel.grid_rowconfigure(0, weight=2)
-right_panel.grid_rowconfigure(1, weight=3)
-right_panel.grid_rowconfigure(2, weight=4)
-right_panel.grid_rowconfigure(3, weight=1)
+# Dentro de left_container: no expandir columnas
+left_container.grid_columnconfigure(0, weight=0)
+left_container.grid_columnconfigure(1, weight=0)
+left_container.grid_columnconfigure(2, weight=0)
+# Filas internas solo ocupan lo necesario:
+left_container.grid_rowconfigure(0, weight=0)  # deck_canvas
+left_container.grid_rowconfigure(1, weight=0)  # curve_canvas + summary + form
+left_container.grid_rowconfigure(2, weight=0)  # (vacío o futuro)
+left_container.grid_rowconfigure(3, weight=0)  # card_menu_frame
 
 # =============================================================================
-# DECK CANVAS
+# CANVAS PRINCIPAL de DECK (deck_canvas)  ── con fondo dinámico
 # =============================================================================
-
-# 1) preload full-resolution PIL images for each saga (and default)
+# Precarga de imágenes de fondo
 bg_full_images = {}
 for key, fname in [
-    (None,            "bg_default.png"),
-    ("Espada Sagrada","bg_espada_sagrada.png"),
-    ("Helenica",      "bg_helenica.png"),
-    ("Hijos de Daana","bg_hijos_de_daana.png"),
-    ("Dominios de Ra","bg_dominios_de_ra.png"),
+    (None,             "bg_default.png"),
+    ("Espada Sagrada", "bg_espada_sagrada.png"),
+    ("Helenica",       "bg_helenica.png"),
+    ("Hijos de Daana", "bg_hijos_de_daana.png"),
+    ("Dominios de Ra", "bg_dominios_de_ra.png"),
 ]:
-    path = os.path.join(UI_IMAGES_DIR, fname)
+    ruta = os.path.join(UI_IMAGES_DIR, fname)
     try:
-        bg_full_images[key] = Image.open(path).convert("RGBA")
+        bg_full_images[key] = Image.open(ruta).convert("RGBA")
     except Exception:
         bg_full_images[key] = None
 
-# 2) current full-res background (start with default)
-_bg_full = bg_full_images[None]
+# Imagen PIL activa (empieza en default)
+_bg_full = bg_full_images.get(None)
 
-# 3) helper to resize & paint the deck background image
+# Función para redibujar fondo
 def _draw_deck_bg(event=None):
-    # must refer to the 'deck_canvas' created below
     w = deck_canvas.winfo_width()
     h = deck_canvas.winfo_height()
     deck_canvas.delete("bg")
     if _bg_full:
         pil = _bg_full.resize((w, h), Image.LANCZOS)
-        deck_canvas._bg = ImageTk.PhotoImage(pil)   # stash on widget
-        deck_canvas.create_image(
-            0, 0,
-            image=deck_canvas._bg,
-            anchor="nw",
-            tags=("bg",)
-        )
+        deck_canvas._bg = ImageTk.PhotoImage(pil)
+        deck_canvas.create_image(0, 0, image=deck_canvas._bg,
+                                 anchor="nw", tags=("bg",))
         deck_canvas.tag_lower("bg")
 
-# 4) create the Canvas
+# Canvas de la baraja
 CANVAS_FIXED_W = 1152
 CANVAS_FIXED_H = 675
-
-deck_canvas = tk.Canvas(
-    left_container,
-    width=CANVAS_FIXED_W,
-    height=CANVAS_FIXED_H,
-    bd=0,
-    highlightthickness=0
-)
-# Usamos sticky="nw" para que permanezca en su tamaño fijo, anclado arriba-izquierda
-deck_canvas.grid(row=0, column=0, padx=10, pady=10, sticky="nw")
-
-# 5) bind resize → repaint, and do an initial paint
+deck_canvas = tk.Canvas(left_container, width=CANVAS_FIXED_W,
+                        height=CANVAS_FIXED_H, bd=0, highlightthickness=0)
+deck_canvas.grid(row=0, column=0, columnspan=3,
+                 padx=10, pady=10, sticky="nw")
 deck_canvas.bind("<Configure>", _draw_deck_bg)
 _draw_deck_bg()
 
-def refresh_deck_dropdown():
-    menu = deck_option["menu"]
-    menu.delete(0, "end")
-    files = get_deck_files()
-    if not files:
-        deck_var.set("Sin barajas")
-    else:
-        deck_var.set(files[-1])    # mostrar la última por defecto
-        for filename in files:
-            menu.add_command(
-                label=filename,
-                command=lambda value=filename: deck_var.set(value)
-            )
-    deck_option.config(justify="right", anchor="e")
+# =============================================================================
+# CURVA DE MANÁ (curve_canvas) justo debajo del deck_canvas
+# =============================================================================
+CURVE_W = 400
+CURVE_H = 200
+curve_canvas = tk.Canvas(left_container, width=CURVE_W, height=CURVE_H, bg="#e0e0e0", bd=0, highlightthickness=0)
+curve_canvas.grid(row=1, column=0, padx=10, pady=(0,10), sticky="nw")
 
 # =============================================================================
-# Resumen de Categorías (alineado al borde derecho de left_container, con espacio mínimo)
+# SUMMARY FRAME (Categorías + Estadísticas) — alineado a la izquierda, fuente +5
 # =============================================================================
-# Asegúrate de que la columna 1 de left_container no se expanda:
-left_container.grid_columnconfigure(0, weight=1)   # para el canvas: expande si la ventana crece
-left_container.grid_columnconfigure(1, weight=0)   # summary fijo
-
 summary_frame = tk.Frame(left_container, bg=BG_DEFAULT)
-# Pegado al noreste de la celda, sin margen izquierdo adicional
-summary_frame.grid(row=0, column=1, padx=(0,2), pady=10, sticky="ne")
-# Columnas internas no crecen
-summary_frame.grid_columnconfigure(0, weight=0)
-summary_frame.grid_columnconfigure(1, weight=0)
+summary_frame.grid(row=1, column=1, padx=(10,0), pady=(0,10), sticky="nw")
 
+# --- Categorías ----------------------------------------------------------------
+cat_frame = tk.Frame(summary_frame, bg=BG_DEFAULT)
+cat_frame.grid(row=0, column=0, sticky="nw")
 for idx, cat in enumerate(category_order):
-    lbl_name = tk.Label(
-        summary_frame,
-        text=f"{cat}:",
-        font=("Helvetica", 10, "bold"),
-        bg=BG_DEFAULT
-    )
-    lbl_count = tk.Label(
-        summary_frame,
-        text="0",
-        font=("Helvetica", 10),
-        bg=BG_DEFAULT
-    )
-    # Nombre alineado a la derecha pegado al valor
-    lbl_name.grid(row=idx, column=0, sticky="e", padx=(0,4))
-    # Valor alineado a la izquierda con padding mínimo
-    lbl_count.grid(row=idx, column=1, sticky="w", padx=(0,4))
+    lbl_name = tk.Label(cat_frame, text=f"{cat}:", font=("Helvetica", 15, "bold"),
+                        bg=BG_DEFAULT, anchor="w")
+    lbl_count = tk.Label(cat_frame, text="0", font=("Helvetica", 15),
+                         bg=BG_DEFAULT, anchor="w")
+    lbl_name.grid(row=idx, column=0, sticky="w")
+    lbl_count.grid(row=idx, column=1, sticky="w", padx=(4,0))
     category_labels[cat] = lbl_count
 
-# =============================================================================
-# Estadísticas Adicionales
-# =============================================================================
-stats_frame = tk.LabelFrame(
-    summary_frame,
-    text="Estadísticas Adicionales",
-    bg=BG_DEFAULT,
-    font=("Helvetica", 10, "bold"),
-    padx=5,
-    pady=5
-)
-# Justo debajo de "Total", anclado a la derecha
-stats_frame.grid(
-    row=len(category_order),
-    column=0,
-    columnspan=2,
-    pady=(8, 0),
-    sticky="ne"
-)
-lbl_avg_cost = tk.Label(
-    stats_frame,
-    text="Costo promedio (baraja): 0.00",
-    font=("Helvetica", 10),
-    bg=BG_DEFAULT
-)
-lbl_avg_str = tk.Label(
-    stats_frame,
-    text="Fuerza aliados promedio: 0.00",
-    font=("Helvetica", 10),
-    bg=BG_DEFAULT
-)
-lbl_avg_cost.grid(row=0, column=0, sticky="w", pady=(0,2))
+# --- Estadísticas Adicionales --------------------------------------------------
+stats_frame = tk.LabelFrame(summary_frame, text="Estadísticas Adicionales",
+                            bg=BG_DEFAULT, font=("Helvetica", 15, "bold"),
+                            padx=5, pady=5, labelanchor="nw")
+stats_frame.grid(row=0, column=1, padx=(15,0), sticky="nw")
+lbl_avg_cost = tk.Label(stats_frame, text="Costo promedio (baraja): 0.00",
+                        font=("Helvetica", 15), bg=BG_DEFAULT, anchor="w")
+lbl_avg_str  = tk.Label(stats_frame, text="Fuerza aliados promedio: 0.00",
+                        font=("Helvetica", 15), bg=BG_DEFAULT, anchor="w")
+lbl_avg_cost.grid(row=0, column=0, sticky="w")
 lbl_avg_str .grid(row=1, column=0, sticky="w")
 
 # =============================================================================
-# Saga / Raza / Formato (apilados, bajo las estadísticas)
+# FRAME Saga / Raza / Formato — alineado a la izquierda, fuente +5
 # =============================================================================
-dropdown_frame = tk.Frame(summary_frame, bg=BG_DEFAULT)
-# sticky="ne" para anclar arriba-derecha dentro de summary_frame, y pequeño padx a la derecha
-dropdown_frame.grid(
-    row=len(category_order) + 1,
-    column=0,
-    columnspan=2,
-    pady=(8, 0),
-    padx=(0,2),
-    sticky="ne"
-)
-# Fijar columnas para que el label quede a la izquierda de la celda y el menú a la derecha
-dropdown_frame.grid_columnconfigure(0, weight=1)  # da espacio flexible a la izquierda
-dropdown_frame.grid_columnconfigure(1, weight=0)  # el menú ocupa su ancho natural
+form_frame = tk.Frame(left_container, bg=BG_DEFAULT)
+form_frame.grid(row=1, column=2, padx=(15,0), pady=(0,10), sticky="nw")
 
-# --- Saga ---
-lbl_saga = tk.Label(
-    dropdown_frame,
-    text="Saga:",
-    font=("Helvetica", 10, "bold"),
-    bg=BG_DEFAULT,
-    fg="red"
-)
-lbl_saga.grid(row=0, column=0, sticky="e", padx=(0,4))
+lbl_saga = tk.Label(form_frame, text="Saga:", font=("Helvetica", 15, "bold"),
+                    bg=BG_DEFAULT, anchor="w")
+lbl_saga.grid(row=0, column=0, sticky="w")
 saga_var = tk.StringVar(value="Seleccione")
-saga_menu = tk.OptionMenu(
-    dropdown_frame,
-    saga_var,
-    *list(SAGA_FOLDERS.keys())
-)
-saga_menu.config(width=18, font=("Helvetica", 10), bg=BG_DEFAULT, state="normal")
-saga_menu.grid(row=0, column=1, sticky="e")
+saga_menu = tk.OptionMenu(form_frame, saga_var, *list(SAGA_FOLDERS.keys()))
+saga_menu.config(width=14, font=("Helvetica", 15), bg=BG_DEFAULT)
+saga_menu.grid(row=0, column=1, sticky="w", padx=(4,0))
 
-# --- Raza ---
-lbl_raza = tk.Label(
-    dropdown_frame,
-    text="Raza:",
-    font=("Helvetica", 10, "bold"),
-    bg=BG_DEFAULT,
-    fg=BG_DEFAULT
-)
-lbl_raza.grid(row=1, column=0, sticky="e", padx=(0,4))
+lbl_raza = tk.Label(form_frame, text="Raza:", font=("Helvetica", 15, "bold"),
+                    bg=BG_DEFAULT, fg="grey", anchor="w")
+lbl_raza.grid(row=1, column=0, sticky="w")
 race_var = tk.StringVar(value="Seleccione")
-race_menu = tk.OptionMenu(dropdown_frame, race_var, "")
-race_menu["menu"].delete(0)
-race_menu.config(width=18, font=("Helvetica", 10), bg=BG_DEFAULT, state="disabled")
-race_menu.grid(row=1, column=1, sticky="e")
+race_menu = tk.OptionMenu(form_frame, race_var, "Seleccione")
+race_menu.config(width=14, font=("Helvetica", 15), bg=BG_DEFAULT,
+                 state="disabled")
+race_menu.grid(row=1, column=1, sticky="w", padx=(4,0))
 
-# --- Formato ---
-lbl_formato = tk.Label(
-    dropdown_frame,
-    text="Formato:",
-    font=("Helvetica", 10, "bold"),
-    bg=BG_DEFAULT,
-    fg=BG_DEFAULT
-)
-lbl_formato.grid(row=2, column=0, sticky="e", padx=(0,4))
+lbl_formato = tk.Label(form_frame, text="Formato:",
+                       font=("Helvetica", 15, "bold"),
+                       bg=BG_DEFAULT, fg="grey", anchor="w")
+lbl_formato.grid(row=2, column=0, sticky="w")
 format_var = tk.StringVar(value="Seleccione")
-format_menu = tk.OptionMenu(dropdown_frame, format_var, "")
-format_menu["menu"].delete(0)
-format_menu.config(width=18, font=("Helvetica", 10), bg=BG_DEFAULT, state="disabled")
-format_menu.grid(row=2, column=1, sticky="e")
+format_menu = tk.OptionMenu(form_frame, format_var, "Seleccione")
+format_menu.config(width=14, font=("Helvetica", 15), bg=BG_DEFAULT,
+                   state="disabled")
+format_menu.grid(row=2, column=1, sticky="w", padx=(4,0))
 
-# Bind callbacks para actualizar
+# Bind callbacks a las NUEVAS variables
 saga_var.trace("w", on_saga_change)
 race_var.trace("w", on_race_change)
 format_var.trace("w", on_format_change)
 
 # =============================================================================
-# Mana Curve
-# =============================================================================
-
-curve_canvas = tk.Canvas(left_container, width=500, height=210, bg="#e0e0e0", bd=0, highlightthickness=0)
-curve_canvas.grid(row=1, column=0, padx=10, pady=(0,10), sticky="nw")
-
-# =============================================================================
-# Lower menu: Carta, Cantidad, Botones
+# MENÚ INFERIOR: Carta, Cantidad, Botones
 # =============================================================================
 card_menu_frame = tk.Frame(left_container, bg=BG_DEFAULT)
-card_menu_frame.grid(
-    row=3, column=0, columnspan=2,
-    padx=10, pady=(10,20),
-    sticky="w"
-)
+card_menu_frame.grid(row=3, column=0, columnspan=3, padx=10, pady=(10,20), sticky="we")
 
-# — Carta entry with autocomplete —
+# — Carta entry con autocomplete —
 tk.Label(card_menu_frame, text="Carta:", font=("Helvetica",10,"bold"), bg=BG_DEFAULT).grid(row=0, column=0, sticky="e")
 card_entry = tk.Entry(card_menu_frame, width=30, font=("Helvetica",10))
 card_entry.grid(row=0, column=1, columnspan=3, padx=(5,20))
 
 def autocomplete_card(event):
-    # Accept Right-arrow or Enter
     if event.keysym in ("Right", "Return"):
         try:
             card_entry.select_clear()
@@ -1222,32 +1093,27 @@ def autocomplete_card(event):
         except tk.TclError:
             pass
         return
-    # Backspace: clear selection
     if event.keysym == "BackSpace":
         try:
             card_entry.select_clear()
         except tk.TclError:
             pass
         return
-
     text = card_entry.get()
     try:
         sel_start = card_entry.index("sel.first")
         typed = text[:sel_start]
     except tk.TclError:
         typed = text
-
     if len(typed.strip()) < 2:
         try:
             card_entry.select_clear()
         except tk.TclError:
             pass
         return
-
     lookup = typed.strip().lower().replace(" ", "-")
     if current_saga is None or current_format is None:
         return
-
     matches = []
     for nm, card in ALL_CARDS.items():
         if not nm.startswith(lookup):
@@ -1257,18 +1123,15 @@ def autocomplete_card(event):
         if card.category == "Aliados" and (current_race is None or card.race != current_race):
             continue
         matches.append(nm)
-
     if not matches:
         try:
             card_entry.select_clear()
         except tk.TclError:
             pass
         return
-
     matches.sort()
     full = matches[0]
     display = " ".join(part.capitalize() for part in full.split("-"))
-
     card_entry.delete(0, tk.END)
     card_entry.insert(0, display)
     start = len(typed)
@@ -1276,7 +1139,6 @@ def autocomplete_card(event):
     card_entry.icursor(start)
 
 card_entry.bind("<KeyRelease>", autocomplete_card)
-
 
 # — Cantidad dropdown —
 tk.Label(card_menu_frame, text="Cantidad:", font=("Helvetica",10,"bold"), bg=BG_DEFAULT).grid(row=0, column=4, sticky="e")
@@ -1304,7 +1166,21 @@ deck_var = tk.StringVar(value="Sin barajas")
 deck_option = tk.OptionMenu(card_menu_frame, deck_var, *get_deck_files())
 deck_option.config(width=20, justify="right", anchor="e", font=("Helvetica",10), bg=BG_DEFAULT)
 deck_option.grid(row=1, column=4, padx=(5,20), pady=(10,0))
+
+def refresh_deck_dropdown():
+    menu = deck_option["menu"]
+    menu.delete(0, "end")
+    files = get_deck_files()
+    if not files:
+        deck_var.set("Sin barajas")
+    else:
+        deck_var.set(files[-1])
+        for filename in files:
+            menu.add_command(label=filename, command=lambda value=filename: deck_var.set(value))
+    deck_option.config(justify="right", anchor="e")
+
 refresh_deck_dropdown()
+
 import_button = ImageButton(card_menu_frame, text="Importar baraja", font=("Helvetica",10,"bold"), command=import_deck_dropdown)
 import_button.grid(row=1, column=5, padx=(5,20), pady=(10,0))
 
@@ -1313,8 +1189,11 @@ quit_button = ImageButton(card_menu_frame, text="Salir", font=("Helvetica",10,"b
 quit_button.grid(row=1, column=6, padx=(5,0), pady=(10,0))
 
 # =============================================================================
-#  Sección CONSISTENCIA (Right Panel)
+# PANEL DERECHO
 # =============================================================================
+
+#  Sección CONSISTENCIA
+
 consistency_frame = tk.LabelFrame(right_panel, text="Consistencia", bg=BG_DEFAULT, font=("Helvetica",10,"bold"), padx=5, pady=5)
 consistency_frame.grid(row=0, column=0, padx=10, pady=(10,5), sticky="nwe")
 
