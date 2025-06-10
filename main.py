@@ -716,47 +716,53 @@ def simulate_1000_hands():
 # Cambia colores de fondo al elegir Saga
 # =============================================================================
 def set_background_color_for_saga(saga):
+    """Pinta todo con el color de la saga menos la curva de maná."""
     global _bg_full
-    # Mapear saga a color si lo tenías; por ejemplo:
-    if saga == "Hijos de Daana":
-        color = "#37eca5"
-    elif saga == "Helenica":
-        color = "#c5aa87"
-    elif saga == "Espada Sagrada":
-        color = "#acbcf7"
-    elif saga == "Dominios de Ra":
-        color = "#F1D154"
-    else:
-        color = BG_DEFAULT
 
-    # Actualizar imagen de fondo
+    # --- mapa de colores ---
+    saga_colors = {
+        "Hijos de Daana":  "#37eca5",
+        "Helenica":        "#c5aa87",
+        "Espada Sagrada":  "#acbcf7",
+        "Dominios de Ra":  "#F1D154",
+        None:              BG_DEFAULT
+    }
+    color = saga_colors.get(saga, BG_DEFAULT)
+
+    # --- fondo dinámico del deck ---
     _bg_full = bg_full_images.get(saga)
     _draw_deck_bg()
 
-    # Resto de ajustes de color en UI...
-    root.configure(bg=color)
-    left_container.configure(bg=color)
-    right_panel.configure(bg=color)
-    summary_frame.configure(bg=color)
-    stats_frame.configure(bg=color)
-    deck_canvas.configure(bg=color)
-    curve_canvas.configure(bg="#e0e0e0")
-    deal_canvas.configure(bg=color)
-    sim_frame.configure(bg=color)
-    hand_frame.configure(bg=color)
-    consistency_frame.configure(bg=color)
-    lbl_saga.configure(bg=color)
-    lbl_raza.configure(bg=color)
-    lbl_formato.configure(bg=color)
-    saga_menu.configure(bg=color)
-    race_menu.configure(bg=color)
-    format_menu.configure(bg=color)
-    saga_menu["menu"].configure(bg=color)
-    race_menu["menu"].configure(bg=color)
-    format_menu["menu"].configure(bg=color)
-    qty_menu.configure(bg=color)
-    deck_option.configure(bg=color)
+    # --- función recursiva para aplicar fondo ---
+    def paint(widget):
+        # No tocar curve_canvas ni entrys blancos
+        if widget is curve_canvas or isinstance(widget, tk.Entry):
+            return
+        try:
+            widget.configure(bg=color)
+            # Menú desplegable interno
+            if isinstance(widget, tk.OptionMenu):
+                widget["menu"].configure(bg=color)
+        except Exception:
+            pass
+        # Recorrer hijos
+        for child in widget.winfo_children():
+            paint(child)
+
+    # Aplicar a toda la jerarquía
+    paint(root)
+
+    # Entrada principal de texto queda blanca
     card_entry.configure(bg="white")
+
+    # Fix divider always black:
+    divider.configure(bg="black")
+
+    # Curva de maná permanece gris
+    curve_canvas.configure(bg="#e0e0e0")
+
+    # Actualizar resaltados de etiquetas
+    update_label_highlight()
 
 # =============================================================================
 # Callbacks y helpers para Saga / Raza / Formato (con highlight al final)
@@ -817,7 +823,8 @@ def on_saga_change(*args):
         # Poblar menú de Raza y habilitarlo
         menu = race_menu["menu"]
         menu.delete(0, "end")
-        menu.add_command(label="Seleccione", command=lambda: race_var.set("Seleccione"))
+        menu.add_command(label="Seleccione", state="disabled")
+        race_var.set("Seleccione")
         for raza in RACES_BY_SAGA[sel]:
             display = raza.capitalize()
             menu.add_command(label=display, command=lambda v=display: race_var.set(v))
@@ -858,7 +865,8 @@ def on_race_change(*args):
         # Poblar Formato y habilitarlo
         menu = format_menu["menu"]
         menu.delete(0, "end")
-        menu.add_command(label="Seleccione", command=lambda: format_var.set("Seleccione"))
+        menu.add_command(label="Seleccione", state="disabled")
+        format_var.set("Seleccione")
         for fmt in ("Pbx", "Reborn"):
             menu.add_command(label=fmt, command=lambda v=fmt: format_var.set(v))
         format_menu.config(state="normal")
