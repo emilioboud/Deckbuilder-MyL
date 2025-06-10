@@ -863,6 +863,11 @@ def _repaint_ttk(palette_bg, palette_fg="black"):
         background=BG_DEFAULT,   # mismo color de fondo que la saga
         foreground="black"
     )
+    style.configure(
+    "Instr.TButton",
+    font=("Tahoma", 12, "bold"),
+    padding=6
+)
     style.map(
     "TButton",
     background=[("active", BG_DEFAULT)],
@@ -992,17 +997,84 @@ for idx, cat in enumerate(category_order):
     lbl_count.grid(row=idx, column=1, sticky="w", padx=(4,0))
     category_labels[cat] = lbl_count
 
+def show_instructions_overlay():
+    global _overlay
+    _close_overlay()
+
+    # overlay completo sobre right_panel
+    _overlay = tk.Frame(right_panel, bg=right_panel.cget("bg"))
+    _overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+
+    # botón de cerrar
+    ttk.Button(_overlay, text="❌  Cerrar", command=_close_overlay)\
+       .pack(anchor="ne", padx=6, pady=6)
+
+    # texto de instrucciones
+    instrucciones = (
+        "Instrucciones de uso\n\n"
+        "1. Navegación y filtros\n"
+        "   • Saga → Raza → Formato\n"
+        "   • Tipo y Orden\n"
+        "   • Scroll con rueda sobre Card Search\n\n"
+        "2. Añadir / quitar cartas\n"
+        "   • Botón Añadir carta (autocomplete + cantidad)\n"
+        "   • Botón Eliminar carta\n\n"
+        "3. Drag & Drop\n"
+        "   • Arrastra miniatura al panel izquierdo para añadir\n\n"
+        "4. Clics sobre mazo\n"
+        "   • Izquierdo: quita 1 copia\n"
+        "   • Derecho: añade 1 copia\n"
+        "   • Central: abre detalle ampliado\n\n"
+        "5. Guardar e importar mazos\n"
+        "   • Guardar como: exporta mazo\n"
+        "   • Importar baraja: carga desde archivo\n\n"
+        "6. Atajos de teclado\n"
+        "   • Esc o ❌ Cerrar: cierra overlay\n"
+        "   • Alt+F4 o Salir: cierra la aplicación"
+    )
+    tk.Label(_overlay,
+             text=instrucciones,
+             justify="left",
+             font=("Tahoma",12),
+             bg=_overlay.cget("bg")
+    ).pack(padx=20, pady=20)
+
 # --- Estadísticas Adicionales --------------------------------------------------
-stats_frame = tk.LabelFrame(summary_strip, text="Estadísticas Adicionales",
-                            bg=BG_DEFAULT, font=("Tahoma",15,"bold"),
-                            padx=5, pady=5, labelanchor="nw")
+stats_frame = tk.LabelFrame(
+    summary_strip, text="Estadísticas Adicionales",
+    bg=BG_DEFAULT, font=("Tahoma",15,"bold"),
+    padx=5, pady=5, labelanchor="nw"
+)
 stats_frame.grid(row=0, column=1, padx=(15,15), sticky="n")
-lbl_avg_cost = tk.Label(stats_frame, text="Costo promedio (baraja): 0.00",
-                        font=("Tahoma",15), bg=BG_DEFAULT, anchor="w")
-lbl_avg_str  = tk.Label(stats_frame, text="Fuerza aliados promedio: 0.00",
-                        font=("Tahoma",15), bg=BG_DEFAULT, anchor="w")
+
+lbl_avg_cost = tk.Label(
+    stats_frame,
+    text="Costo promedio (baraja): 0.00",
+    font=("Tahoma",15),
+    bg=BG_DEFAULT,
+    anchor="w"
+)
+lbl_avg_str = tk.Label(
+    stats_frame,
+    text="Fuerza aliados promedio: 0.00",
+    font=("Tahoma",15),
+    bg=BG_DEFAULT,
+    anchor="w"
+)
 lbl_avg_cost.grid(row=0, column=0, sticky="w")
 lbl_avg_str .grid(row=1, column=0, sticky="w")
+
+# — Botón Instrucciones de uso (fuera del frame, justo debajo) —
+instr_button = ttk.Button(
+    summary_strip,
+    text="Instrucciones de uso",
+    style="Instr.TButton",
+    command=show_instructions_overlay,
+    width=20
+)
+# ahora en la misma fila que stats_frame, alineado al fondo (south), sin alterar los demás widgets
+instr_button.grid(row=0, column=1, sticky="s", pady=(0,5))
+
 
 # =============================================================================
 # FRAME Saga / Raza / Formato — alineado a la izquierda, fuente +5
