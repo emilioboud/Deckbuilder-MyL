@@ -1,4 +1,3 @@
-3xazor
 2xbola-de-fuego
 1xcodex-arturicus
 1xcruz-templaria
@@ -17,6 +16,7 @@
 3xllewelyn-voz-de-plata
 3xmercaderes
 3xmesa-redonda
+3xoro
 2xreina-guinivere
 1xsaladino
 1xsir-bedivere

@@ -8,7 +8,6 @@
 1xcesar-augusto
 2xcoliseo
 2xconstantino
-3xcorona-de-laureles
 3xespartaco
 1xexpulsion-de-titanes
 3xfestin
@@ -16,7 +15,7 @@
 1xgladius
 3xidmon-el-adivino
 1xjulio-cesar
-3xlira
+6xoro
 3xpolux
 2xsisifo-el-hechicero
 3xtemistocles
