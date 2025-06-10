@@ -9,9 +9,6 @@ from tkinter import ttk, messagebox
 from collections import Counter, defaultdict
 from PIL import Image, ImageTk
 
-
-print("DEBUG: cargando main.py desde:", __file__)
-
 # =============================================================================
 # MANEJO DE RUTAS PARA SCRIPT VS. EXE
 # =============================================================================
@@ -1405,16 +1402,20 @@ def refresh_search():
         names.sort()
     print(f"[DEBUG] First 5 after sort: {names[:5]}")
 
-    # draw in 5-col grid
-    cols, gap = 5, 6
+    # draw in 5-col grid with smaller gaps
+    cols, gap = 5, 2
+    bg_color = _search_interior.cget("bg")
     for idx, nm in enumerate(names):
         card = ALL_CARDS[nm]
         thumb = _get_thumb(card)
-        if not hasattr(card, "thumb80"):
-            print(f"[DEBUG] Missing thumbnail for {nm}")
-
         row, col = divmod(idx, cols)
-        lbl = tk.Label(_search_interior, image=thumb, bg=BG_DEFAULT, cursor="hand2")
+
+        lbl = tk.Label(
+            _search_interior,
+            image=thumb,
+            bg=bg_color,
+            cursor="hand2"
+        )
         lbl.image = thumb
         lbl.grid(row=row, column=col, padx=gap, pady=gap)
 
@@ -1452,20 +1453,33 @@ def on_search_release(ev):
     w = _drag_data["widget"]
     card = _drag_data["card"]
     if w:
-        tgt = deck_canvas.winfo_containing(ev.x_root, ev.y_root)
-        if tgt == deck_canvas or (hasattr(tgt, "find_withtag") and "card" in deck_canvas.gettags(tgt)):
+        # figure out which widget is under the cursor on release
+        tgt = root.winfo_containing(ev.x_root, ev.y_root)
+        # walk up the parent chain to see if we're inside deck_canvas
+        inside_deck = False
+        while tgt:
+            if tgt == deck_canvas:
+                inside_deck = True
+                break
+            tgt = getattr(tgt, "master", None)
+
+        if inside_deck:
             ok, reason = can_add_card(card, 1)
             if ok:
                 deck.add_card(card, 1)
-                update_category_summary(); update_mana_curve()
-                update_deck_display(); update_consistency(); update_stats()
+                update_category_summary()
+                update_mana_curve()
+                update_deck_display()
+                update_consistency()
+                update_stats()
             else:
                 messagebox.showwarning("No permitido", reason)
+
+        # remove the floating thumbnail
         w.destroy()
+
     _drag_data["widget"] = None
     _drag_data["card"]   = None
-
-# (Removed initial refresh_search() call to avoid startup freeze)
 
 # =============================================================================
 # Eventos de clic sobre carta  (izq-quita, dcha-añade, medio-detalle)
