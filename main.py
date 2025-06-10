@@ -350,7 +350,17 @@ def update_mana_curve():
         "Totems":     "#006400",
         "Armas":      "#800080"
     }
-
+    # ── draw vertical dividers ──
+    bg_color = root.cget('bg')
+    line_width = 2  # thickness in pixels
+    for i in range(1, BAR_COUNT):
+        x = MARGIN_X + i * (BAR_WIDTH + BAR_SPACING) - (BAR_SPACING / 2)
+        curve_canvas.create_line(
+            x, 0,
+            x, CANVAS_H,
+            fill=bg_color,
+            width=line_width
+        )
     for cost_idx in range(0, 11):
         x0 = MARGIN_X + cost_idx * (BAR_WIDTH + BAR_SPACING)
         y_base = CANVAS_H - MARGIN_Y - 15
