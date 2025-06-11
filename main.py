@@ -1819,8 +1819,7 @@ def refresh_search():
 
     # 2) must pick a Tipo
     tipo = tipo_var.get()
-    if tipo == "Tipo": return
-    if tipo != "Oro" and not (current_saga and current_race and current_format):
+    if tipo == "Tipo":
         return
 
     # 3) map Tipo → internal category
@@ -1833,22 +1832,31 @@ def refresh_search():
     }
     cat_filter = tipo_map[tipo]
 
-    # 4) gather names matching filters
+    # 4) gather names matching filters; apply saga/race/format only if set
     names = []
-    if cat_filter == "Oros":
-        if "oro" in ALL_CARDS:
-            names.append("oro")
-        for nm, card in ALL_CARDS.items():
-            if (nm!="oro" and card.category=="Oros"
-                and card.saga==current_saga and card.format==current_format):
-                names.append(nm)
-    else:
-        for nm, card in ALL_CARDS.items():
-            if (card.category == cat_filter and
-                card.saga    == current_saga and
-                card.format  == current_format and
-                not (cat_filter=="Aliados" and card.race!=current_race)):
-                names.append(nm)
+    for nm, card in ALL_CARDS.items():
+        # must match chosen category
+        if card.category != cat_filter:
+            continue
+
+        # always include the base “oro” when filtering Oros
+        if cat_filter == "Oros" and nm == "oro":
+            names.append(nm)
+            continue
+
+        # enforce saga if selected
+        if current_saga and card.saga != current_saga:
+            continue
+
+        # enforce race if selected (only for Aliados)
+        if cat_filter == "Aliados" and current_race and card.race != current_race:
+            continue
+
+        # enforce format if selected
+        if current_format and card.format != current_format:
+            continue
+
+        names.append(nm)
 
     # 5) sort by chosen field & direction
     field      = current_order_field or orden_var.get()
