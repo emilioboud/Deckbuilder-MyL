@@ -175,7 +175,7 @@ def can_add_card(name, qty):
     if internal == "oro":
         total_actual = deck.total_cards()
         if total_actual + qty > 50:
-            return False, "La baraja no puede exceder 50 cartas."
+            return False, "El mazo no puede exceder 50 cartas."
         return True, ""
 
     # ── NORMAL CASE FOR ALL OTHER CARDS ──
@@ -188,7 +188,7 @@ def can_add_card(name, qty):
 
     total_actual = deck.total_cards()
     if total_actual + qty > 50:
-        return False, "La baraja no puede exceder 50 cartas."
+        return False, "El mazo no puede exceder 50 cartas."
 
     max_allowed = restricted_limits.get(name, CARD_MAX_DEFAULT)
     ya_tengo = deck.card_counts.get(name, 0)
@@ -216,7 +216,7 @@ def update_stats():
     avg_cost = (total_cost / total_count) if total_count > 0 else 0.0
     avg_str  = (total_strength / total_aliados) if total_aliados > 0 else 0.0
 
-    lbl_avg_cost.config(text=f"Costo promedio (baraja): {avg_cost:.2f}")
+    lbl_avg_cost.config(text=f"Costo promedio (mazo): {avg_cost:.2f}")
     lbl_avg_str.config(text=f"Fuerza aliados promedio: {avg_str:.2f}")
 
 # =============================================================================
@@ -260,15 +260,16 @@ def remove_card_gui():
 
 def import_deck_dropdown():
     choice = deck_var.get()
-    if choice == "Sin barajas":
-        messagebox.showwarning("Error", "No hay barajas para importar.")
+    if choice == "Sin mazos":
+        messagebox.showwarning("Error", "No hay mazos para importar.")
         return
     path = os.path.join(DECKS_DIR, choice)
     if not os.path.isfile(path):
         messagebox.showwarning("Error", f"No se encontró {path}")
         return
 
-    deck.card_counts.clear()
+    # 1) Leer todas las líneas primero
+    entries = []
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -279,25 +280,46 @@ def import_deck_dropdown():
                 qty = int(parts[0])
             except ValueError:
                 continue
-            name = parts[1]
+            name = parts[1].strip()
             lookup = name.lower()
             if lookup not in CARD_NAME_MAP:
-                continue
+                messagebox.showwarning("No permitido", f"Carta \"{name}\" no existe.")
+                return
             canonical = CARD_NAME_MAP[lookup]
-            if not is_card_valid_for_filters(canonical):
-                continue
-            max_allowed = restricted_limits.get(canonical, CARD_MAX_DEFAULT)
-            actual_add = min(qty, 50 - deck.total_cards(), max_allowed)
-            if actual_add <= 0:
-                continue
+            entries.append((canonical, qty))
+
+    # 2) Validar filtros (salvo "oro")
+    for canonical, _ in entries:
+        if canonical.lower() != "oro" and not is_card_valid_for_filters(canonical):
+            messagebox.showwarning(
+                "No permitido",
+                f"La carta \"{canonical}\" no cumple los filtros de Saga/Raza/Formato."
+            )
+            return
+
+    # 3) Vaciar y recargar
+    deck.card_counts.clear()
+    for canonical, qty in entries:
+        max_allowed = restricted_limits.get(canonical, CARD_MAX_DEFAULT)
+        actual_add = min(qty, 50 - deck.total_cards(), max_allowed)
+        if actual_add > 0:
             deck.card_counts[canonical] = actual_add
 
     deck.is_saved = True
+
+    # 4) Actualizar la interfaz
     update_category_summary()
     update_mana_curve()
     update_deck_display()
     update_consistency()
     update_stats()
+
+    # 5) Rellenar "Guardar como" con el nombre de mazo (sin extensión)
+    save_entry.delete(0, tk.END)
+    save_entry.insert(0, os.path.splitext(choice)[0])
+
+    # 6) Refrescar lista de mazos
+    refresh_deck_dropdown()
 
 def save_deck_gui():
     fname = save_entry.get().strip()
@@ -306,7 +328,7 @@ def save_deck_gui():
         return
 
     path = save_deck_to_file(deck.card_counts, fname)
-    messagebox.showinfo("Guardado", f"Baraja guardada en:\n{path}")
+    messagebox.showinfo("Guardado", f"Mazo guardado en:\n{path}")
     deck.is_saved = True
     refresh_deck_dropdown()
 
@@ -403,58 +425,102 @@ def card_sort_key(card_name):
     return (category_priority[card.category], cost_for_sort, card.name.lower())
 
 def update_deck_display():
+    """Redraw the deck canvas; keep duplicates together, wrap before overflow,
+       always draw Oro as the very last row, left-justified, with 'oro' last."""
     deck_canvas.delete("all")
-    try: _draw_deck_bg()
-    except: pass
+    try:
+        _draw_deck_bg()
+    except:
+        pass
 
     image_id_to_name.clear()
     flat = deck.list_all_copies()
+    width_limit = deck_canvas.winfo_width() - DECK_CANVAS_RIGHT_MARGIN
 
-    # NON-ORO
-    x, y = DECK_CANVAS_LEFT_MARGIN, DECK_CANVAS_TOP_MARGIN
-    cur_name = cur_cat = None
+    # Lazy-load any missing tk_images
+    for name in set(flat):
+        card = ALL_CARDS.get(name)
+        if card and (not hasattr(card, "tk_image") or card.tk_image is None):
+            try:
+                card.load_image()
+            except:
+                pass
+
+    x = DECK_CANVAS_LEFT_MARGIN
+    y = DECK_CANVAS_TOP_MARGIN
     last_h = 0
-    CANVAS_W = int(deck_canvas.winfo_width())
 
-    for name in sorted([n for n in flat if ALL_CARDS[n].category!="Oros"], key=card_sort_key):
+    def place_block(name, count=1):
+        """Place 'count' copies of 'name' without splitting them across rows."""
+        nonlocal x, y, last_h
         card = ALL_CARDS[name]
-        # tk_image was preloaded at startup
-        CARD_W = card.tk_image.width()
-        CARD_H = card.tk_image.height()
-        last_h = CARD_H
+        w, h = card.tk_image.width(), card.tk_image.height()
+        last_h = max(last_h, h)
 
-        DUP = CARD_W//4; SAME = CARD_W*3//4; DIFF = CARD_W
-        offset = 0 if cur_name is None else (DUP if name==cur_name else SAME if card.category==cur_cat else DIFF)
-        nx = x + offset
+        total_block_width = w + (count - 1) * (w // 4)
+        if x + total_block_width > width_limit:
+            x = DECK_CANVAS_LEFT_MARGIN
+            y += last_h + DECK_VERTICAL_GUTTER
+            last_h = h
 
-        if nx+CARD_W > CANVAS_W - DECK_CANVAS_RIGHT_MARGIN:
-            nx = DECK_CANVAS_LEFT_MARGIN
-            y += CARD_H + DECK_VERTICAL_GUTTER
-            cur_name = cur_cat = None
+        for i in range(count):
+            xi = x + i * (w // 4)
+            img_id = deck_canvas.create_image(xi, y,
+                                             image=card.tk_image,
+                                             anchor="nw",
+                                             tags=("card",))
+            image_id_to_name[img_id] = name
 
-        img_id = deck_canvas.create_image(nx, y, image=card.tk_image, anchor="nw", tags=("card",))
-        image_id_to_name[img_id] = name
-        cur_name, cur_cat, x = name, card.category, nx
+        x += total_block_width
 
-    # OROS
-    if any(ALL_CARDS[n].category=="Oros" for n in deck.card_counts):
+    # ── Draw NON-Oro cards ──
+    from collections import Counter
+    counts = Counter(flat)
+    non_oros = [n for n in flat if ALL_CARDS[n].category != "Oros"]
+    for name in sorted(set(non_oros), key=card_sort_key):
+        place_block(name, counts[name])
+
+    # ── Draw Oro cards in final row, left-justified, with 'oro' last ──
+    oro_counts = [(n, c) for n, c in deck.card_counts.items()
+                  if ALL_CARDS[n].category == "Oros"]
+    if oro_counts:
+        # new line
         x = DECK_CANVAS_LEFT_MARGIN
         y += last_h + DECK_VERTICAL_GUTTER
-        for name, cnt in ((n,c) for n,c in deck.card_counts.items() if ALL_CARDS[n].category=="Oros"):
-            card = ALL_CARDS[name]
-            CARD_W=card.tk_image.width(); CARD_H=card.tk_image.height(); DUP=CARD_W//4
-            if name.lower()=="oro":
-                img_id=deck_canvas.create_image(x,y,image=card.tk_image,anchor="nw",tags=("card",))
-                image_id_to_name[img_id]=name
-                deck_canvas.create_text(x+CARD_W+20, y+CARD_H//2, text=f"x{cnt}", anchor="w", font=("Tahoma",16,"bold"), fill="black")
-                x+=CARD_W+100
-            else:
-                for _ in range(cnt):
-                    img_id=deck_canvas.create_image(x,y,image=card.tk_image,anchor="nw",tags=("card",))
-                    image_id_to_name[img_id]=name
-                    x+=DUP
-                x+=CARD_W
+        last_h = 0
 
+        # separate the big "oro" entry
+        small_oros = [(n, c) for n, c in oro_counts if n.lower() != "oro"]
+        big_oros   = [(n, c) for n, c in oro_counts if n.lower() == "oro"]
+
+        # first draw all the non-“oro” Oros
+        for name, cnt in small_oros:
+            place_block(name, cnt)
+
+        # then draw the special “oro” card entry last
+        if big_oros:
+            name, cnt = big_oros[0]
+            card = ALL_CARDS[name]
+            w, h = card.tk_image.width(), card.tk_image.height()
+            last_h = max(last_h, h)
+            if x + w > width_limit:
+                x = DECK_CANVAS_LEFT_MARGIN
+                y += h + DECK_VERTICAL_GUTTER
+            img_id = deck_canvas.create_image(x, y,
+                                             image=card.tk_image,
+                                             anchor="nw",
+                                             tags=("card",))
+            image_id_to_name[img_id] = name
+            deck_canvas.create_text(
+                x + w + 20, y + h // 2,
+                text=f"x{cnt}",
+                anchor="w",
+                font=("Tahoma", 16, "bold"),
+                fill="black"
+            )
+            x += w + 100
+
+    # ── Update stats & curves ──
     update_category_summary()
     update_mana_curve()
     update_consistency()
@@ -481,17 +547,15 @@ def update_consistency():
     )
     probs = cumulative_probabilities(n_oros, n_ali2)
 
-    lbl8_ali2.config(text=f"Prob. ≥1 Aliado C2: {probs['p8_ali2']*100:5.2f}%")
-    lbl8_o2  .config(text=f"Prob. ≥2 Oros:            {probs['p8_o2']*100:5.2f}%")
-    lbl8_o3  .config(text=f"Prob. ≥3 Oros:            {probs['p8_o3']*100:5.2f}%")
-
-    lbl7_ali2.config(text=f"Prob. ≥1 Aliado C2: {probs['p8to7_ali2']*100:5.2f}%")
-    lbl7_o2  .config(text=f"Prob. ≥2 Oros:            {probs['p8to7_o2']*100:5.2f}%")
-    lbl7_o3  .config(text=f"Prob. ≥3 Oros:            {probs['p8to7_o3']*100:5.2f}%")
-
-    lbl6_ali2.config(text=f"Prob. ≥1 Aliado C2: {probs['p8to7to6_ali2']*100:5.2f}%")
-    lbl6_o2  .config(text=f"Prob. ≥2 Oros:            {probs['p8to7to6_o2']*100:5.2f}%")
-    lbl6_o3  .config(text=f"Prob. ≥3 Oros:            {probs['p8to7to6_o3']*100:5.2f}%")
+    PROB_LABELS["p8_ali2"        ].config(text=f"{probs['p8_ali2']*100:5.2f}%")
+    PROB_LABELS["p8_o2"          ].config(text=f"{probs['p8_o2']*100:5.2f}%")
+    PROB_LABELS["p8_o3"          ].config(text=f"{probs['p8_o3']*100:5.2f}%")
+    PROB_LABELS["p8to7_ali2"     ].config(text=f"{probs['p8to7_ali2']*100:5.2f}%")
+    PROB_LABELS["p8to7_o2"       ].config(text=f"{probs['p8to7_o2']*100:5.2f}%")
+    PROB_LABELS["p8to7_o3"       ].config(text=f"{probs['p8to7_o3']*100:5.2f}%")
+    PROB_LABELS["p8to7to6_ali2"  ].config(text=f"{probs['p8to7to6_ali2']*100:5.2f}%")
+    PROB_LABELS["p8to7to6_o2"    ].config(text=f"{probs['p8to7to6_o2']*100:5.2f}%")
+    PROB_LABELS["p8to7to6_o3"    ].config(text=f"{probs['p8to7to6_o3']*100:5.2f}%")
 
 # =============================================================================
 # Funciones de mano, mulligan y simulación
@@ -502,7 +566,7 @@ hand_size = 0
 def deal_hand():
     global current_hand, hand_size
     if deck.total_cards() != 50:
-        messagebox.showerror("Error", "La baraja debe tener exactamente 50 cartas para repartir.")
+        messagebox.showerror("Error", "El mazo debe tener exactamente 50 cartas para repartir.")
         return
     hand_size = 8
     draw_new_hand(hand_size)
@@ -513,10 +577,10 @@ def mulligan():
         messagebox.showerror("Error", "No hay mano para mulligan. Presiona ‘Repartir mano’ primero.")
         return
     if hand_size <= 1:
-        messagebox.showerror("Error", "No puedes hacer mulligan con menos de 1 carta.")
+        messagebox.showerror("Error", "No podes hacer mulligan con menos de 1 carta.")
         return
     if deck.total_cards() != 50:
-        messagebox.showerror("Error", "La baraja debe tener exactamente 50 cartas para mulligan.")
+        messagebox.showerror("Error", "El mazo debe tener exactamente 50 cartas para mulligan.")
         return
     hand_size -= 1
     draw_new_hand(hand_size)
@@ -530,7 +594,7 @@ def draw_new_hand(size):
 
 def simulate_1000_hands():
     if deck.total_cards() != 50:
-        messagebox.showerror("Error", "La baraja debe tener exactamente 50 cartas para simular.")
+        messagebox.showerror("Error", "El mazo debe tener exactamente 50 cartas para simular.")
         return
 
     flat_deck_base = deck.list_all_copies()
@@ -655,8 +719,8 @@ def on_saga_change(*args):
                and ALL_CARDS[n].saga != sel]
         if bad and deck.total_cards() > 0 and deck.is_saved and \
            messagebox.askyesno("Cartas inválidas",
-                               "Tu baraja contiene cartas de otra saga.\n"
-                               "¿Deseas guardar antes de vaciarla?"):
+                               "Tu mazo contiene cartas de otra saga.\n"
+                               "¿Queres guardar antes de vaciarla?"):
             save_deck_gui()
         if bad:
             deck.card_counts.clear()
@@ -700,8 +764,8 @@ def on_race_change(*args):
                and ALL_CARDS[n].race != sel.lower()]
         if bad and deck.total_cards() > 0 and deck.is_saved and \
            messagebox.askyesno("Cartas inválidas",
-                               "Tu baraja contiene Aliados de otra raza.\n"
-                               "¿Deseas guardar antes de vaciarla?"):
+                               "Tu mazo contiene Aliados de otra raza.\n"
+                               "Queres guardar antes de vaciarla?"):
             save_deck_gui()
         if bad:
             deck.card_counts.clear()
@@ -740,8 +804,8 @@ def on_format_change(*args):
         if invalidas and deck.total_cards() > 0:
             if deck.is_saved and messagebox.askyesno(
                 "Cartas inválidas",
-                "Tu baraja contiene cartas de otro formato.\n"
-                "¿Deseas guardar antes de vaciarla?"
+                "Tu mazo contiene cartas de otro formato.\n"
+                "¿Queres guardar antes de vaciarla?"
             ):
                 save_deck_gui()
             deck.card_counts.clear()
@@ -773,69 +837,115 @@ root.option_add("*Font", "Tahoma 12")        # todo lo “tk” heredará Tahoma
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _get_thumb(card):
-    """Return a cached thumbnail; uses card.image_path set by splash."""
-    thumb = getattr(card, "thumb80", None)
-    if thumb:
-        return thumb
+    """
+    Return a cached 80×120 thumbnail for `card`.
+    If needed, walk CARD_IMAGES_DIR to find card.name.jpg/png,
+    open it once, and cache both the PIL.Image and the PhotoImage.
+    """
+    # 1) Already made?
+    if hasattr(card, "thumb80"):
+        return card.thumb80
 
-    if getattr(card, "image_path", None) and os.path.isfile(card.image_path):
-        pil = Image.open(card.image_path).convert("RGBA")
+    # 2) Re-use full image if already loaded
+    pil = getattr(card, "image", None)
+
+    # 3) Otherwise, hunt for the file under CARD_IMAGES_DIR
+    if pil is None:
+        for root_dir, _, files in os.walk(CARD_IMAGES_DIR):
+            jpg = f"{card.name}.jpg"
+            png = f"{card.name}.png"
+            if jpg in files:
+                path = os.path.join(root_dir, jpg)
+            elif png in files:
+                path = os.path.join(root_dir, png)
+            else:
+                continue
+            try:
+                pil = Image.open(path).convert("RGBA")
+                card.image = pil     # cache for next time
+            except Exception:
+                pil = None
+            break
+
+    # 4) If we now have a PIL image, resize it into our thumbnail box
+    if pil:
         w, h = pil.size
         scale = min(THUMB_W / w, THUMB_H / h)
-        new_size = (int(w * scale), int(h * scale))
-        pil_thumb = pil.resize(new_size, Image.LANCZOS)
+        new_w, new_h = int(w * scale), int(h * scale)
+        thumb_pil = pil.resize((new_w, new_h), Image.LANCZOS)
 
+        # center it on a transparent canvas
         canvas = Image.new("RGBA", (THUMB_W, THUMB_H), (0, 0, 0, 0))
-        x_off = (THUMB_W - new_size[0]) // 2
-        y_off = (THUMB_H - new_size[1]) // 2
-        canvas.paste(pil_thumb, (x_off, y_off), pil_thumb)
+        x_off = (THUMB_W - new_w) // 2
+        y_off = (THUMB_H - new_h) // 2
+        canvas.paste(thumb_pil, (x_off, y_off), thumb_pil)
 
         thumb = ImageTk.PhotoImage(canvas)
         card.thumb80 = thumb
         return thumb
 
-    ph = ImageTk.PhotoImage(Image.new("RGBA", (THUMB_W, THUMB_H), (0,0,0,0)))
+    # 5) Fallback: blank if nothing found
+    blank = Image.new("RGBA", (THUMB_W, THUMB_H), (0, 0, 0, 0))
+    ph = ImageTk.PhotoImage(blank)
     card.thumb80 = ph
     return ph
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SHOW SPLASH + PROGRESS BAR DURING PRELOAD
+# SHOW SPLASH + PROGRESS BAR DURING PRELOAD (with true transparency)
 # ─────────────────────────────────────────────────────────────────────────────
 root.withdraw()
 
 splash = tk.Toplevel()
 splash.overrideredirect(True)
-splash.configure(bg=BG_DEFAULT)
-# keep splash on top so it’s visible
+
+# 1) Magic key-color transparency
+MAGENTA = "#FF00FF"
+splash.configure(bg=MAGENTA)
+splash.attributes("-transparentcolor", MAGENTA)
 splash.attributes("-topmost", True)
 splash.lift()
 splash.update()
-w, h = 300, 60
-x = (splash.winfo_screenwidth() - w)//2
-y = (splash.winfo_screenheight() - h)//2
-splash.geometry(f"{w}x{h}+{x}+{y}")
 
-tk.Label(splash, text="Cargando imágenes…",
-         font=("Tahoma", 12, "bold"), bg=BG_DEFAULT).pack(pady=(10,0))
-bar = ttk.Progressbar(splash, orient="horizontal", length=260, mode="determinate")
-bar.pack(pady=(5,10))
-bar["maximum"] = len(ALL_CARDS) * 2
+# 2) Load your RGBA logo and size the window slightly taller to fit the bar
+logo_path = os.path.join(UI_IMAGES_DIR, "logo_myl.png")
+pil_logo  = Image.open(logo_path).convert("RGBA")
+logo_w, logo_h = pil_logo.size
 
-# 1) Preload all full-size images
+BAR_HEIGHT = 20    # approximate height of the ttk Progressbar
+PADDING    = 10    # bottom padding
+total_h    = logo_h + BAR_HEIGHT + PADDING
+
+# center on screen
+screen_w = splash.winfo_screenwidth()
+screen_h = splash.winfo_screenheight()
+x = (screen_w - logo_w) // 2
+y = (screen_h - total_h) // 2
+splash.geometry(f"{logo_w}x{total_h}+{x}+{y}")
+
+# 3) Build a hard mask so we don't get ugly semi-transparent borders
+alpha        = pil_logo.split()[3]
+binary_mask  = alpha.point(lambda p: 255 if p >= 128 else 0)
+canvas       = Image.new("RGB", pil_logo.size, MAGENTA)
+canvas.paste(pil_logo, mask=binary_mask)
+
+# 4) Show the logo at the top
+splash_img = ImageTk.PhotoImage(canvas)
+lbl_logo   = tk.Label(splash, image=splash_img, bg=MAGENTA, bd=0)
+lbl_logo.image = splash_img
+lbl_logo.pack(side="top", fill="none")
+
+# 5) Now the progress bar — it will appear *below* the logo
+bar = ttk.Progressbar(splash, orient="horizontal", mode="determinate", length=logo_w-20)
+bar.pack(side="top", fill="x", padx=10, pady=(5,0))
+bar["maximum"] = len(ALL_CARDS)
+
+# 6) Preload all thumbnails
 for i, card in enumerate(ALL_CARDS.values(), start=1):
-    try:
-        card.load_image()
-    except FileNotFoundError:
-        pass
+    _get_thumb(card)
     bar["value"] = i
     splash.update_idletasks()
 
-# 2) Pre-generate all thumbnails
-for i, card in enumerate(ALL_CARDS.values(), start=1):
-    _get_thumb(card)
-    bar["value"] = len(ALL_CARDS) + i
-    splash.update_idletasks()
-
+# 7) Done—tear it down
 splash.destroy()
 root.deiconify()
 
@@ -892,7 +1002,7 @@ def _repaint_ttk(palette_bg, palette_fg="black"):
 # aplica la paleta por defecto al arrancar
 _repaint_ttk(BG_DEFAULT)
 
-root.title("Mitos y Leyendas: Constructor de Barajas")
+root.title("Mitos y Leyendas: Constructor de Mazos")
 root.geometry("1200x970")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -961,7 +1071,7 @@ def _draw_deck_bg(event=None):
                                  anchor="nw", tags=("bg",))
         deck_canvas.tag_lower("bg")
 
-# Canvas de la baraja
+# Canvas del mazo
 CANVAS_FIXED_W = 1152
 CANVAS_FIXED_H = 675
 deck_canvas = tk.Canvas(left_container, width=CANVAS_FIXED_W,
@@ -1027,7 +1137,7 @@ def show_instructions_overlay():
         "   • Central: abre detalle ampliado\n\n"
         "5. Guardar e importar mazos\n"
         "   • Guardar como: exporta mazo\n"
-        "   • Importar baraja: carga desde archivo\n\n"
+        "   • Importar mazo: carga desde archivo\n\n"
         "6. Atajos de teclado\n"
         "   • Esc o ❌ Cerrar: cierra overlay\n"
         "   • Alt+F4 o Salir: cierra la aplicación"
@@ -1049,7 +1159,7 @@ stats_frame.grid(row=0, column=1, padx=(15,15), sticky="n")
 
 lbl_avg_cost = tk.Label(
     stats_frame,
-    text="Costo promedio (baraja): 0.00",
+    text="Costo promedio (mazo): 0.00",
     font=("Tahoma",15),
     bg=BG_DEFAULT,
     anchor="w"
@@ -1200,26 +1310,35 @@ ttk.Label(card_menu_frame, text="Guardar como:",
           ).grid(row=1, column=0, sticky="e", pady=(8,0))
 save_entry = ttk.Entry(card_menu_frame, width=24)
 save_entry.grid(row=1, column=1, sticky="w", padx=(5,10), pady=(8,0))
-save_button = ttk.Button(card_menu_frame, text="Guardar baraja",
+save_button = ttk.Button(card_menu_frame, text="Guardar mazo",
                          command=save_deck_gui)
 save_button.grid(row=1, column=2, padx=(0,20), pady=(8,0))
 
-# — Importar baraja —
-ttk.Label(card_menu_frame, text="Importar baraja:",
+# — Importar mazo —
+ttk.Label(card_menu_frame, text="Importar mazo:",
           font=("Tahoma",12,"bold")
           ).grid(row=1, column=3, sticky="e", pady=(8,0))
-deck_var    = tk.StringVar(value="Sin barajas")
-deck_option = ttk.Combobox(card_menu_frame, textvariable=deck_var,
-                           values=get_deck_files(), state="readonly",
-                           width=18)
+deck_var    = tk.StringVar(value="Sin mazos")
+deck_option = ttk.Combobox(
+    card_menu_frame,
+    textvariable=deck_var,
+    values=get_deck_files(),
+    state="readonly",
+    width=18
+)
 deck_option.grid(row=1, column=4, sticky="w", padx=(5,10), pady=(8,0))
 
 def refresh_deck_dropdown():
     deck_option.configure(values=get_deck_files())
+
+# ensure dropdown is up-to-date now and after imports
 refresh_deck_dropdown()
 
-import_button = ttk.Button(card_menu_frame, text="Importar baraja",
-                           command=import_deck_dropdown)
+import_button = ttk.Button(
+    card_menu_frame,
+    text="Importar mazo",
+    command=lambda: (import_deck_dropdown(), refresh_deck_dropdown())
+)
 import_button.grid(row=1, column=5, padx=(10,10), pady=(8,0))
 
 # — Salir —
@@ -1227,46 +1346,56 @@ quit_button = ttk.Button(card_menu_frame, text="Salir",
                          command=root.destroy)
 quit_button.grid(row=1, column=6, padx=(0,0), pady=(8,0))
 
-# =============================================================================
-# PANEL DERECHO
-# =============================================================================
+# ─────────────────────────────────────────────────────────────────────────────
+# PANEL DERECHO – Probabilidades (alineadas, sin recortes)
+# ─────────────────────────────────────────────────────────────────────────────
+consistency_frame = tk.LabelFrame(
+    right_panel, text="Probabilidades Mano Inicial",
+    bg=BG_DEFAULT, font=("Tahoma", 10, "bold"),
+    padx=5, pady=5
+)
+consistency_frame.grid(row=0, column=0, padx=10, pady=(10, 5), sticky="nwe")
 
-#  Sección CONSISTENCIA
+LABEL_FONT  = ("Tahoma", 9)
+PROB_LABELS = {}                         # { key : lbl_val }
 
-consistency_frame = tk.LabelFrame(right_panel, text="Consistencia", bg=BG_DEFAULT, font=("Tahoma",10,"bold"), padx=5, pady=5)
-consistency_frame.grid(row=0, column=0, padx=10, pady=(10,5), sticky="nwe")
+def build_column(parent, title, prefix):
+    """
+    Create one probability column and save the three value-labels
+    into PROB_LABELS using keys  f'{prefix}ali2' / '{prefix}o2' / '{prefix}o3'.
+    """
+    col = tk.Frame(parent, bg=BG_DEFAULT)
+    # ⬇ tighter padding so text never gets cropped
+    col.pack(side="left", expand=True, fill="y", padx=12)
 
-col8 = tk.Frame(consistency_frame, bg=BG_DEFAULT)
-col7 = tk.Frame(consistency_frame, bg=BG_DEFAULT)
-col6 = tk.Frame(consistency_frame, bg=BG_DEFAULT)
-col8.grid(row=0, column=0, padx=(0,10), sticky="nw")
-col7.grid(row=0, column=1, padx=(0,10), sticky="nw")
-col6.grid(row=0, column=2, sticky="nw")
+    # Header — now left-aligned
+    tk.Label(col, text=title, font=("Tahoma", 10, "bold"),
+             bg=BG_DEFAULT, anchor="w").pack(anchor="w", pady=(0, 4))
 
-LABEL_FONT = ("Tahoma", 9)
-tk.Label(col8, text="Robar 8 cartas", font=("Tahoma",10,"bold"), bg=BG_DEFAULT).grid(row=0, column=0, sticky="w", pady=(0,4))
-lbl8_ali2 = tk.Label(col8, text="Prob. ≥1 Aliado C2: 0%", font=LABEL_FONT, bg=BG_DEFAULT)
-lbl8_o2   = tk.Label(col8, text="Prob. ≥2 Oros: 0%",      font=LABEL_FONT, bg=BG_DEFAULT)
-lbl8_o3   = tk.Label(col8, text="Prob. ≥3 Oros: 0%",      font=LABEL_FONT, bg=BG_DEFAULT)
-lbl8_ali2.grid(row=1, column=0, sticky="w")
-lbl8_o2.grid(row=2, column=0, sticky="w")
-lbl8_o3.grid(row=3, column=0, sticky="w")
+    # Helper → one row “description | value”
+    def add_row(desc, key):
+        row = tk.Frame(col, bg=BG_DEFAULT)
+        row.pack(fill="x", pady=1)
+        tk.Label(row, text=desc, font=LABEL_FONT,
+                 bg=BG_DEFAULT).pack(side="left", anchor="w")
+        val = tk.Label(row, text="–", font=LABEL_FONT,
+                       bg=BG_DEFAULT, anchor="w")
+        val.pack(side="left")            # glue immediately after the colon
+        PROB_LABELS[key] = val
 
-tk.Label(col7, text="8 → 7 Mulligan", font=("Tahoma",10,"bold"), bg=BG_DEFAULT).grid(row=0, column=0, sticky="w", pady=(0,4))
-lbl7_ali2 = tk.Label(col7, text="Prob. ≥1 Aliado C2: 0%", font=LABEL_FONT, bg=BG_DEFAULT)
-lbl7_o2   = tk.Label(col7, text="Prob. ≥2 Oros: 0%",      font=LABEL_FONT, bg=BG_DEFAULT)
-lbl7_o3   = tk.Label(col7, text="Prob. ≥3 Oros: 0%",      font=LABEL_FONT, bg=BG_DEFAULT)
-lbl7_ali2.grid(row=1, column=0, sticky="w")
-lbl7_o2.grid(row=2, column=0, sticky="w")
-lbl7_o3.grid(row=3, column=0, sticky="w")
+    add_row("Prob. ≥1 Aliado C2:", f"{prefix}ali2")
+    add_row("Prob. ≥2 Oros:",      f"{prefix}o2")
+    add_row("Prob. ≥3 Oros:",      f"{prefix}o3")
 
-tk.Label(col6, text="8 → 7 → 6 Mulligan", font=("Tahoma",10,"bold"), bg=BG_DEFAULT).grid(row=0, column=0, sticky="w", pady=(0,4))
-lbl6_ali2 = tk.Label(col6, text="Prob. ≥1 Aliado C2: 0%", font=LABEL_FONT, bg=BG_DEFAULT)
-lbl6_o2   = tk.Label(col6, text="Prob. ≥2 Oros: 0%",      font=LABEL_FONT, bg=BG_DEFAULT)
-lbl6_o3   = tk.Label(col6, text="Prob. ≥3 Oros: 0%",      font=LABEL_FONT, bg=BG_DEFAULT)
-lbl6_ali2.grid(row=1, column=0, sticky="w")
-lbl6_o2.grid(row=2, column=0, sticky="w")
-lbl6_o3.grid(row=3, column=0, sticky="w")
+# Build the three aligned columns
+build_column(consistency_frame, "Robar 8",            "p8_")
+build_column(consistency_frame, "Robar 8 + 7",        "p8to7_")
+build_column(consistency_frame, "Robar 8 + 7 + 6",    "p8to7to6_")
+
+# Handy references for update_consistency()
+lbl8_ali2 = PROB_LABELS["p8_ali2"];      lbl8_o2 = PROB_LABELS["p8_o2"];      lbl8_o3 = PROB_LABELS["p8_o3"]
+lbl7_ali2 = PROB_LABELS["p8to7_ali2"];   lbl7_o2 = PROB_LABELS["p8to7_o2"];   lbl7_o3 = PROB_LABELS["p8to7_o3"]
+lbl6_ali2 = PROB_LABELS["p8to7to6_ali2"];lbl6_o2 = PROB_LABELS["p8to7to6_o2"];lbl6_o3 = PROB_LABELS["p8to7to6_o3"]
 
 # =============================================================================
 # Repartir Mano Aleatoria (Right Panel)
@@ -1376,14 +1505,10 @@ def display_hand(hand_list):               # ← this is the single, valid one
         for c in hand_list) else "red"))
     
 # ─────────────────────────────────────────────────────────────────────────────
-# NEW: Divider + Card Search section (5-col vertical scroll + drag-and-drop)
+# NEW: Divider + Card Search section (6-col vertical scroll + drag-and-drop)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# 1) horizontal divider line
-divider2 = tk.Frame(right_panel, height=2, bg="black")
-divider2.grid(row=1, column=0, sticky="we", padx=5, pady=(10,5))
-
-# 2) Card Search frame
+# Card Search frame
 search_frame = tk.LabelFrame(
     right_panel, text="Card Search",
     bg=BG_DEFAULT, font=("Tahoma", 12, "bold"),
@@ -1426,34 +1551,39 @@ search_canvas.grid(row=1, column=0, sticky="nsew")
 _search_interior = tk.Frame(search_canvas, bg=BG_DEFAULT)
 search_canvas.create_window((0,0), window=_search_interior, anchor="nw")
 
-def _on_search_enter(ev):
-    search_canvas.bind_all(
-        "<MouseWheel>",
-        lambda e: search_canvas.yview_scroll(int(-1*(e.delta/120)), "units")
-    )
+def _on_search_scroll(event):
+    search_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
 
-def _on_search_leave(ev):
-    search_canvas.unbind_all("<MouseWheel>")
+# bind wheel anywhere on frame/canvas/scrollbar/interior
+for widget in (search_frame, search_canvas, vscroll, _search_interior):
+    widget.bind("<Enter>", lambda e: search_canvas.bind_all("<MouseWheel>", _on_search_scroll))
+    widget.bind("<Leave>", lambda e: search_canvas.unbind_all("<MouseWheel>"))
 
 def _on_search_configure(event):
     search_canvas.configure(scrollregion=search_canvas.bbox("all"))
 
 _search_interior.bind("<Configure>", _on_search_configure)
-_search_interior.bind("<Enter>", _on_search_enter)
-_search_interior.bind("<Leave>", _on_search_leave)
 
 # mapping from widget → card name
 _search_id_to_name = {}
 
 # 5) Populate function
 def refresh_search():
+    # 1) Clear out old results
     for w in _search_interior.winfo_children():
         w.destroy()
     _search_id_to_name.clear()
 
-    if not (current_saga and current_race and current_format and tipo_var.get() != "Tipo"):
+    tipo = tipo_var.get()
+    # 2) Must pick a Tipo
+    if tipo == "Tipo":
         return
 
+    # 3) For non-"Oro" searches, require saga/race/format
+    if tipo != "Oro" and not (current_saga and current_race and current_format):
+        return
+
+    # 4) Map UI “Tipo” → internal category
     tipo_map = {
         "Aliado":   "Aliados",
         "Talisman": "Talismanes",
@@ -1461,16 +1591,31 @@ def refresh_search():
         "Arma":     "Armas",
         "Oro":      "Oros"
     }
-    cat_filter = tipo_map.get(tipo_var.get(), None)
+    cat_filter = tipo_map[tipo]
 
     names = []
-    for nm, card in ALL_CARDS.items():
-        if card.saga   != current_saga:    continue
-        if card.format != current_format:  continue
-        if cat_filter and card.category != cat_filter: continue
-        if card.category == "Aliados" and card.race != current_race: continue
-        names.append(nm)
+    if cat_filter == "Oros":
+        # Always include the special "oro" card
+        if "oro" in ALL_CARDS:
+            names.append("oro")
+        # Include any other Oros only if they match saga & formato
+        for nm, card in ALL_CARDS.items():
+            if nm == "oro" or card.category != "Oros":
+                continue
+            if card.saga == current_saga and card.format == current_format:
+                names.append(nm)
+    else:
+        # Standard filtering for all other categories
+        for nm, card in ALL_CARDS.items():
+            if card.category != cat_filter:
+                continue
+            if card.saga   != current_saga:    continue
+            if card.format != current_format: continue
+            if cat_filter == "Aliados" and card.race != current_race:
+                continue
+            names.append(nm)
 
+    # 5) Sort by Orden dropdown
     if orden_var.get() == "Coste":
         names.sort(key=lambda n: ALL_CARDS[n].cost or 0)
     elif orden_var.get() == "Fuerza":
@@ -1478,16 +1623,20 @@ def refresh_search():
     else:
         names.sort()
 
-    cols, gap = 5, 2
-    bg_color = _search_interior.cget("bg")
+    # 6) Render a 6‐across grid of thumbnails
+    cols, gap = 6, 2
+    bg = _search_interior.cget("bg")
     for idx, nm in enumerate(names):
         thumb = _get_thumb(ALL_CARDS[nm])
         row, col = divmod(idx, cols)
-        lbl = tk.Label(_search_interior, image=thumb, bg=bg_color, cursor="hand2")
+        lbl = tk.Label(_search_interior, image=thumb, bg=bg, cursor="hand2")
         lbl.image = thumb
         lbl.grid(row=row, column=col, padx=gap, pady=gap)
         _search_id_to_name[lbl] = nm
         lbl.bind("<ButtonPress-1>", start_search_drag)
+        # ensure the wheel scrolling remains active even when over a card
+        lbl.bind("<Enter>", lambda e: search_canvas.bind_all("<MouseWheel>", _on_search_scroll))
+        lbl.bind("<Leave>", lambda e: search_canvas.unbind_all("<MouseWheel>"))
 
 tipo_menu.bind("<<ComboboxSelected>>", lambda e: refresh_search())
 orden_menu.bind("<<ComboboxSelected>>", lambda e: refresh_search())
@@ -1579,21 +1728,20 @@ def add_card_by_right_click(event):
         update_category_summary(); update_mana_curve(); update_deck_display()
         update_consistency();       update_stats()
 
-# -----------------------------------------------------------------------------
-# Overlay con detalle (clic central)  -- fuente grande + imagen 507×727
+# -----------------------------------------------------------------------------  
+# Overlay con detalle (clic central) – grid 3 filas, no solapamientos  
 # -----------------------------------------------------------------------------
 _overlay = None
 
-
 def _close_overlay():
+    """Cerrar y eliminar cualquier overlay anterior."""
     global _overlay
     if _overlay and _overlay.winfo_exists():
         _overlay.destroy()
     _overlay = None
 
-
 def _find_image(card_name: str):
-    """Busca .jpg / .png en cualquier sub-carpeta de card_images/."""
+    """Busca card_name.jpg/png en CARD_IMAGES_DIR y subdirectorios."""
     for root_dir, _, files in os.walk(CARD_IMAGES_DIR):
         if f"{card_name}.jpg" in files:
             return os.path.join(root_dir, f"{card_name}.jpg")
@@ -1601,38 +1749,51 @@ def _find_image(card_name: str):
             return os.path.join(root_dir, f"{card_name}.png")
     return None
 
-
 def _show_card_overlay(card_name: str):
+    """Muestra overlay en 3 filas: botón cerrar, imagen, estadísticas."""
     global _overlay
     _close_overlay()
 
-    card = ALL_CARDS[card_name]
-
-    # full-overlay container
+    # 1) Crear overlay que cubre right_panel
     _overlay = tk.Frame(right_panel, bg=right_panel.cget("bg"))
     _overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
 
-    # close button
-    ttk.Button(_overlay, text="❌  Cerrar", command=_close_overlay)\
-        .pack(anchor="ne", padx=6, pady=6)
+    # 2) Configurar grid: 3 filas, 1 columna
+    _overlay.grid_rowconfigure(0, weight=0)
+    _overlay.grid_rowconfigure(1, weight=1)
+    _overlay.grid_rowconfigure(2, weight=0)
+    _overlay.grid_columnconfigure(0, weight=1)
 
-    # ── bordered image ──
-    img_path = _find_image(card_name)
-    try:
-        pil = Image.open(img_path) if img_path else None
-    except:
-        pil = None
-    if pil is None:
-        pil = card.tk_image._PhotoImage__photo.zoom(3)
-    pil = pil.resize((507, 727), Image.LANCZOS)
-    big = ImageTk.PhotoImage(pil)
+    # 3) Botón cerrar en fila 0, esquina NE
+    btn = ttk.Button(_overlay, text="✖", command=_close_overlay)
+    btn.grid(row=0, column=0, sticky="ne", padx=10, pady=10)
 
-    img_frame = tk.Frame(_overlay, bd=2, relief="solid")
-    img_frame.pack(pady=10)
-    tk.Label(img_frame, image=big).pack()
-    _overlay.big_ref = big
+    # 4) Cargar la imagen
+    card = ALL_CARDS[card_name]
+    # intenta imagen en disco
+    path = _find_image(card_name)
+    pil = None
+    if path:
+        try:
+            pil = Image.open(path).convert("RGBA")
+        except:
+            pil = None
+    # fallback a memoria
+    if pil is None and hasattr(card, "image"):
+        pil = card.image.copy()
+    if pil:
+        pil = pil.resize((507,727), Image.LANCZOS)
+    else:
+        pil = Image.new("RGBA", (507,727), (255,255,255,0))
+    big_img = ImageTk.PhotoImage(pil)
+    _overlay.big_ref = big_img  # evitar GC
 
-    # ── stats grid with vertical divider ──
+    # 5) Mostrar imagen en fila 1, centrada
+    img_lbl = tk.Label(_overlay, image=big_img, bd=5, relief="solid",
+                       bg=_overlay.cget("bg"))
+    img_lbl.grid(row=1, column=0, pady=(0,20))
+
+    # 6) Preparar estadísticas
     stats = []
     if card.cost is not None:
         stats.append(("Coste", str(card.cost)))
@@ -1642,23 +1803,21 @@ def _show_card_overlay(card_name: str):
     if getattr(card, "race", None):
         stats.append(("Raza", card.race.title()))
 
+    # 7) Frame de stats en fila 2, centrado
     stats_frame = tk.Frame(_overlay, bg=_overlay.cget("bg"))
-    stats_frame.pack(pady=(0,18))
+    stats_frame.grid(row=2, column=0, pady=(0,20))
 
-    # configure two columns + separator
+    # 8) Grid interno para parámetros y valores
     stats_frame.grid_columnconfigure(0, weight=1, pad=10)
     stats_frame.grid_columnconfigure(2, weight=1, pad=10)
     sep = ttk.Separator(stats_frame, orient="vertical")
     sep.grid(row=0, column=1, rowspan=len(stats), sticky="ns", padx=5)
 
-    param_font = ("Tahoma", 14, "bold")
-    value_font = ("Tahoma", 12, "bold")
-
     for i, (param, val) in enumerate(stats):
-        tk.Label(stats_frame, text=param + ":", font=param_font,
-                 bg=stats_frame.cget("bg")).grid(row=i, column=0, sticky="e")
-        tk.Label(stats_frame, text=val, font=value_font,
-                 bg=stats_frame.cget("bg")).grid(row=i, column=2, sticky="w")
+        tk.Label(stats_frame, text=f"{param}:", font=("Tahoma",14,"bold"),
+                 bg=_overlay.cget("bg")).grid(row=i, column=0, sticky="e", padx=(0,5))
+        tk.Label(stats_frame, text=val, font=("Tahoma",12,"bold"),
+                 bg=_overlay.cget("bg")).grid(row=i, column=2, sticky="w", padx=(5,0))
 
 def show_detail_on_middle_click(event):
     item = event.widget.find_withtag("current")
@@ -1673,16 +1832,17 @@ def show_detail_on_middle_click(event):
 # -----------------------------------------------------------------------------
 right_panel.grid_columnconfigure(0, weight=1)        # frames ahora se expanden
 
+# -----------------------------------------------------------------------------  
+# Bindings on the deck canvas: left-click to remove, right-click to add,  
+# middle-click on a card to show detail overlay  
 # -----------------------------------------------------------------------------
-# Bindings
-# -----------------------------------------------------------------------------
+# First, canvas-wide binds for background clicks (optional):
 deck_canvas.bind("<Button-1>", remove_card_by_click)
 deck_canvas.bind("<Button-3>", add_card_by_right_click)
-deck_canvas.bind("<Button-2>", show_detail_on_middle_click)
 
-# =============================================================================
+# ---------------------------------------------------------------------------
 # Hover: only bring card to front on enter, restore stacking on leave
-# =============================================================================
+# ---------------------------------------------------------------------------
 _hover_stack = {}
 
 def _on_card_enter(event):
@@ -1693,7 +1853,7 @@ def _on_card_enter(event):
         return
     item = items[0]
 
-    # record whatever was above this card so we can restore later
+    # record what was above this card so we can restore later
     all_cards = list(canvas.find_withtag("card"))
     try:
         idx = all_cards.index(item)
@@ -1712,11 +1872,24 @@ def _on_card_leave(event):
             canvas.tag_raise(other)
     _hover_stack.clear()
 
-# rebind handlers (removes any old glow bindings)
+
+# ---------------------------------------------------------------------------
+# Bindings on the deck canvas: remove/add/detail and hover
+# ---------------------------------------------------------------------------
+# Background clicks
+deck_canvas.bind("<Button-1>", remove_card_by_click)
+deck_canvas.bind("<Button-3>", add_card_by_right_click)
+
+# Clear any old hover binds
 deck_canvas.tag_unbind("card", "<Enter>")
 deck_canvas.tag_unbind("card", "<Leave>")
+
+# Hover binds on actual card items
 deck_canvas.tag_bind("card", "<Enter>", _on_card_enter)
 deck_canvas.tag_bind("card", "<Leave>", _on_card_leave)
+
+# Middle-click on a card item → show detail overlay
+deck_canvas.tag_bind("card", "<ButtonPress-2>", show_detail_on_middle_click)
 
 # Inicializar display y arrancar loop
 update_deck_display()
