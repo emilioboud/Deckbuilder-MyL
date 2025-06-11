@@ -1087,27 +1087,32 @@ def _repaint_ttk(palette_bg, palette_fg="black"):
                     background=palette_bg,
                     foreground=palette_fg)
 
-    # -- Botones
+    # -- Botones genéricos
     style.configure(
         "TButton",
         font=("Tahoma", 12, "bold"),
         padding=6,
-        relief="raised",         # borde en relieve
-        borderwidth=2,           # grosor del borde
-        background=BG_DEFAULT,   # mismo color de fondo que la saga
+        relief="raised",
+        borderwidth=2,
+        background=BG_DEFAULT,
         foreground="black"
     )
-    style.configure(
-    "Instr.TButton",
-    font=("Tahoma", 12, "bold"),
-    padding=6
-)
     style.map(
-    "TButton",
-    background=[("active", BG_DEFAULT)],
-    foreground=[("active", "black")],
-    relief=[("pressed", "sunken"), ("!pressed", "raised")]
-)
+        "TButton",
+        background=[("active", BG_DEFAULT)],
+        foreground=[("active", "black")],
+        relief=[("pressed", "sunken"), ("!pressed", "raised")]
+    )
+
+    # -- Botón “Instrucciones de uso”: texto blanco y fondo azul --
+    style.configure("Instr.TButton",
+                    font      = ("Tahoma", 12, "bold"),
+                    padding   = 6,
+                    background= "#0000FF",
+                    foreground= "white")
+    style.map("Instr.TButton",
+              background=[("!disabled", "#0000FF"), ("active", "#0050AA")],
+              foreground=[("!disabled", "white"),   ("active", "white")])
 
     # -- Combobox (campo y desplegable)
     style.configure("TCombobox",
@@ -1756,9 +1761,10 @@ tipo_menu = ttk.Combobox(
     width=10
 )
 tipo_menu.grid(row=0, column=0, sticky="w", padx=(0,10))
-tipo_menu.bind("<<ComboboxSelected>>", lambda e: refresh_search())
+# Trace: cada vez que el usuario seleccione un Tipo nuevo se refresca
+tipo_var.trace("w", lambda *args: refresh_search())
 
-# “Orden” dropdown (field only)
+# “Orden” dropdown (campo)
 base_orders = ("Alfabético", "Coste", "Fuerza")
 orden_var   = tk.StringVar(value=base_orders[0])
 orden_menu  = ttk.Combobox(
@@ -1771,7 +1777,7 @@ orden_menu  = ttk.Combobox(
 orden_menu.grid(row=0, column=1, sticky="w", padx=(0,10))
 orden_menu.bind("<<ComboboxSelected>>", on_field_select)
 
-# Invert‐order button
+# Invert‐order button (solo invierte el sentido)
 invert_btn = ttk.Button(
     filter_frame,
     text="↑",
@@ -1796,9 +1802,10 @@ search_canvas.create_window((0,0), window=_search_interior, anchor="nw")
 def _on_search_scroll(event):
     search_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
 
-for widget in (search_frame, search_canvas, vscroll, _search_interior):
-    widget.bind("<Enter>", lambda e: search_canvas.bind_all("<MouseWheel>", _on_search_scroll))
-    widget.bind("<Leave>", lambda e: search_canvas.unbind_all("<MouseWheel>"))
+# Bind mousewheel directamente al canvas y a su interior,
+# así funcionará sobre tarjetas, fondo o donde pongas el cursor.
+search_canvas.bind("<MouseWheel>", _on_search_scroll)
+_search_interior.bind("<MouseWheel>", _on_search_scroll)
 
 def _on_search_configure(event):
     search_canvas.configure(scrollregion=search_canvas.bbox("all"))
@@ -1809,20 +1816,55 @@ _search_interior.bind("<Configure>", _on_search_configure)
 _search_id_to_name = {}
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Thumbnail helper for larger Card Search images
+# ─────────────────────────────────────────────────────────────────────────────
+SEARCH_THUMB_W, SEARCH_THUMB_H = 96, 144  # 20% más grandes
+
+def _get_search_thumb(card):
+    """
+    Devuelve una miniatura centrada de tamaño SEARCH_THUMB_W×SEARCH_THUMB_H.
+    """
+    pil = getattr(card, "image", None)
+    if pil is None:
+        for root_dir, _, files in os.walk(CARD_IMAGES_DIR):
+            jpg = f"{card.name}.jpg"
+            png = f"{card.name}.png"
+            if jpg in files or png in files:
+                path = os.path.join(root_dir, jpg if jpg in files else png)
+                pil = Image.open(path).convert("RGBA")
+                break
+    if pil is None:
+        pil = Image.new("RGBA", (SEARCH_THUMB_W, SEARCH_THUMB_H), (0,0,0,0))
+
+    w, h = pil.size
+    scale = min(SEARCH_THUMB_W / w, SEARCH_THUMB_H / h)
+    new_w, new_h = int(w * scale), int(h * scale)
+    thumb_pil = pil.resize((new_w, new_h), Image.LANCZOS)
+
+    canvas = Image.new("RGBA", (SEARCH_THUMB_W, SEARCH_THUMB_H), (0,0,0,0))
+    x_off = (SEARCH_THUMB_W - new_w) // 2
+    y_off = (SEARCH_THUMB_H - new_h) // 2
+    canvas.paste(thumb_pil, (x_off, y_off), thumb_pil)
+
+    return ImageTk.PhotoImage(canvas)
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Core search + sort + render
 # ─────────────────────────────────────────────────────────────────────────────
 def refresh_search():
-    # 1) clear old results
+    # 1) limpiar resultados anteriores
     for w in _search_interior.winfo_children():
         w.destroy()
     _search_id_to_name.clear()
 
-    # 2) must pick a Tipo
+    # 2) solo mostrar resultados si Saga, Raza, Formato y Tipo están seleccionados
+    if current_saga is None or current_race is None or current_format is None:
+        return
     tipo = tipo_var.get()
     if tipo == "Tipo":
         return
 
-    # 3) map Tipo → internal category
+    # 3) mapear Tipo → categoría interna
     tipo_map = {
         "Aliado":   "Aliados",
         "Talisman": "Talismanes",
@@ -1832,33 +1874,23 @@ def refresh_search():
     }
     cat_filter = tipo_map[tipo]
 
-    # 4) gather names matching filters; apply saga/race/format only if set
+    # 4) recolectar nombres según filtros
     names = []
     for nm, card in ALL_CARDS.items():
-        # must match chosen category
         if card.category != cat_filter:
             continue
-
-        # always include the base “oro” when filtering Oros
         if cat_filter == "Oros" and nm == "oro":
             names.append(nm)
             continue
-
-        # enforce saga if selected
         if current_saga and card.saga != current_saga:
             continue
-
-        # enforce race if selected (only for Aliados)
         if cat_filter == "Aliados" and current_race and card.race != current_race:
             continue
-
-        # enforce format if selected
         if current_format and card.format != current_format:
             continue
-
         names.append(nm)
 
-    # 5) sort by chosen field & direction
+    # 5) ordenar
     field      = current_order_field or orden_var.get()
     descending = not order_ascending
     if field == "Coste":
@@ -1868,11 +1900,11 @@ def refresh_search():
     else:
         names.sort(reverse=descending)
 
-    # 6) render grid
+    # 6) dibujar grid con miniaturas ampliadas
     cols, gap = 6, 2
     bg = _search_interior.cget("bg")
     for idx, nm in enumerate(names):
-        thumb = _get_thumb(ALL_CARDS[nm])
+        thumb = _get_search_thumb(ALL_CARDS[nm])
         row, col = divmod(idx, cols)
         lbl = tk.Label(_search_interior, image=thumb, bg=bg, cursor="hand2")
         lbl.image = thumb
