@@ -1,1 +1,1 @@
-[5, "armas", "hel", "reborn"]
+[5, 4, "aliados", "heroe", "hel", "reborn"]
