@@ -1533,7 +1533,7 @@ def show_instructions_overlay():
     )
     credit_lbl = tk.Label(
         credit_frame,
-        text="Emilio Boudgouste - 2025 - 'Ni idea que onda los derechos, esto es gratis maestro, disfruta.'",
+        text="Emilio Boudgouste - 2025 - 'Ni idea que onda los derechos, no me denuncien, esto es gratis, máquina, usa y disfrutá.'",
         font=("Tahoma", 14, "bold"),
         bg=credit_frame.cget("bg"),
         justify="center",
@@ -1574,17 +1574,22 @@ def show_instructions_overlay():
         "1. Navegación y filtros\n"
         "   • Seleccioná Saga → Raza → Formato.\n"
         "   • Al elegir Formato, se activan los campos “Tipo” y “Carta”.\n"
-        "   • Click derecho e izquierdo para agregar/remover carta. Apreta ruedita del mouse para detalles de carta\n\n"
+        "   • Click derecho e izquierdo para agregar/remover carta. Apreta ruedita\n"
+        "      del mouse para detalles de carta\n\n"
         "2. Añadir / quitar cartas\n"
         "   • Escribí en el campo “Carta”.\n"
         "   • Seleccioná Cantidad (1–3) y apretá “Añadir” o “Eliminar”.\n"
-        "   • También podés arrastrar la miniatura desde “Card Search”.\n\n"
-        "3. Guardar e importar mazos\n"
-        "   • Los mazos se guardan como archivos TXT en la carpeta 'decks/' → Ej.: 2xguardia-real → 2 copias.\n"
+        "   • También podés arrastrar la miniatura desde “Card Search”, o hacerle\n"
+        "      click derecho.\n\n"
+        "   3. Guardar e importar mazos\n"
+        "   • Los mazos se guardan como archivos TXT en la carpeta 'decks/' →\n"
+        "      Ej.: 2xguardia-real → 2 copias.\n"
         "   • Para cargar un mazo, elegí el archivo y apretá “Importar mazo”.\n\n"
         "4. Consistencia (probabilidades)\n"
-        "   • Se calcula para la mano inicial (Robar 8) y también considerando si hacés 1 o 2 mulligans\n"
-        "   • Muestra la chance de que hayas tenido la combinación en alguna de las manos robadas (no sólo en la última).\n\n"
+        "   • Se calcula para la mano inicial (Robar 8) y también considerando si\n"
+        "      hacés 1 o 2 mulligans\n"
+        "   • Muestra la chance de que hayas tenido la combinación en alguna de\n"
+        "      las manos robadas (no sólo en la última).\n\n"
         "5. Atajos de teclado\n"
         "   • Esc o ❌: cierra esta ventana.\n"
         "   • Alt+F4 o “Salir”: cierra la aplicación."
