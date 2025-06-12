@@ -1993,6 +1993,25 @@ def on_invert_click():
     invert_btn.config(text="↑" if order_ascending else "↓")
     refresh_search()
 
+def on_search_right_click(event):
+    lbl = event.widget
+    card_name = _search_id_to_name.get(lbl)
+    if not card_name:
+        return
+
+    ok, _ = can_add_card(card_name, 1)
+    if not ok:
+        messagebox.showwarning("No permitido", get_add_error_message(card_name))
+        return
+
+    deck.add_card(card_name, 1)
+    play_sfx("add_card.wav")
+    update_category_summary()
+    update_mana_curve()
+    update_deck_display()
+    update_consistency()
+    update_stats()
+
 # Card Search frame
 search_frame = tk.LabelFrame(
     right_panel, text="Card Search",
@@ -2141,6 +2160,26 @@ def _get_search_thumb(card):
 # ─────────────────────────────────────────────────────────────────────────────
 # Core search + sort + render
 # ─────────────────────────────────────────────────────────────────────────────
+def on_search_right_click(event):
+    lbl = event.widget
+    card_name = _search_id_to_name.get(lbl)
+    if not card_name:
+        return
+
+    ok, _ = can_add_card(card_name, 1)
+    if not ok:
+        messagebox.showwarning("No permitido", get_add_error_message(card_name))
+        return
+
+    deck.add_card(card_name, 1)
+    play_sfx("add_card.wav")
+    update_category_summary()
+    update_mana_curve()
+    update_deck_display()
+    update_consistency()
+    update_stats()
+
+
 def refresh_search():
     # Limpiar resultados anteriores
     for w in _search_interior.winfo_children():
@@ -2201,8 +2240,17 @@ def refresh_search():
         lbl.grid(row=row, column=col, padx=gap, pady=gap)
         _search_id_to_name[lbl] = nm
 
-        # drag start & keep your scroll binding
+        # drag start → add drag/drop
         lbl.bind("<ButtonPress-1>", start_search_drag, add="+")
+        # right-click → add one copy
+        lbl.bind("<Button-3>", on_search_right_click)
+
+        # middle-click → show detail overlay
+        lbl.bind("<ButtonPress-2>",
+                 lambda e, name=nm: _show_card_overlay(name),
+                 add="+")
+
+        # keep scroll active on hover
         lbl.bind("<Enter>",
                  lambda e: search_canvas.bind_all("<MouseWheel>", _on_search_scroll),
                  add="+")
@@ -2210,11 +2258,10 @@ def refresh_search():
                  lambda e: search_canvas.unbind_all("<MouseWheel>"),
                  add="+")
 
-        # tooltip for name, left of mouse after 1s
+        # tooltip for name
         tip = Tooltip(lbl, nm.replace("-", " ").title(), delay=1000)
         lbl.bind("<Enter>", lambda e, t=tip: t.schedule(), add="+")
         lbl.bind("<Leave>", lambda e, t=tip: t.hide(),     add="+")
-
 
 tipo_menu.bind("<<ComboboxSelected>>", lambda e: refresh_search())
 orden_menu.bind("<<ComboboxSelected>>", lambda e: refresh_search())
