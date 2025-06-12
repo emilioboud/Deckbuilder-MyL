@@ -1,6 +1,5 @@
 import os
 import sys
-import ast
 import random
 import math
 from ttkthemes import ThemedTk
@@ -56,36 +55,133 @@ DECK_CANVAS_RIGHT_MARGIN = 10
 DECK_VERTICAL_GUTTER = 7
 PROMPT_BORDER_WIDTH = 2
 PROMPT_BORDER_COLOR = "red"
-_hint_shown = False
+
 # =============================================================================
 # IMPORTAR CLASE Card DESDE cards.py
 # =============================================================================
 from cards import Card, CARD_DATA_DIR, CARD_IMAGES_DIR, load_restricted_limits, SAGA_MAP, RACES_BY_SAGA
+# =============================================================================
+# SIMPLE HOVER TOOLTIP HELPER
+# =============================================================================
+class Tooltip:
+    def __init__(self, widget, text, delay=1000):
+        self.widget    = widget
+        self.text      = text
+        self.delay     = delay
+        self.tipwindow = None
+        self.id        = None
+
+    def show(self):
+        if self.tipwindow:
+            return
+
+        # create window off-screen first
+        tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        lbl = tk.Label(
+            tw,
+            text=self.text,
+            background="#ffffe0",
+            relief="solid",
+            borderwidth=1,
+            font=("Tahoma", 16, "bold"),
+            justify="left"
+        )
+        lbl.pack()
+
+        # force layout so we can measure it
+        tw.update_idletasks()
+        tw_w = tw.winfo_width()
+        tw_h = tw.winfo_height()
+
+        # get current pointer position
+        px = self.widget.winfo_pointerx()
+        py = self.widget.winfo_pointery()
+
+        # position to left of pointer, and down a bit
+        x = px - tw_w - 10
+        y = py + 10
+
+        tw.wm_geometry(f"+{x}+{y}")
+        self.tipwindow = tw
+
+    def schedule(self):
+        self.unschedule()
+        self.id = self.widget.after(self.delay, self.show)
+
+    def unschedule(self):
+        if self.id:
+            self.widget.after_cancel(self.id)
+            self.id = None
+
+    def hide(self):
+        self.unschedule()
+        if self.tipwindow:
+            self.tipwindow.destroy()
+            self.tipwindow = None
 
 # =============================================================================
-# CARGAR RESTRICCIONES
+# SIMPLE ERROR MESSAGE TOOLTIP
+# =============================================================================
+def get_add_error_message(card_name):
+    """
+    Returns the proper Spanish warning for attempting to exceed
+    the restriction on card_name.
+    """
+    # human-readable
+    pretty = card_name.replace("-", " ").title()
+    # look up limit (0 = ban, 1 = unica, 2 = x2, default = 3)
+    lim = restricted_limits.get(card_name, CARD_MAX_DEFAULT)
+
+    if lim == 0:
+        return f"No se puede agregar {pretty}, está baneada"
+    elif lim == 1:
+        return f"No se puede agregar {pretty}, es única"
+    elif lim == 2:
+        return f"No se puede agregar {pretty}, es legal x2"
+    else:
+        return "No se puede agregar más de 3 copias de la misma carta a tu mazo"
+# =============================================================================
+# CARGA DINÁMICA DE RESTRICCIONES (por Formato)
 # =============================================================================
 CARD_MAX_DEFAULT = 3
-restricted_limits = {}
-for sub in ("pbx", "reborn"):
-    subdir = os.path.join(RESTRICTIONS_DIR, sub)
-    filepath = os.path.join(subdir, "restricted_cards.txt")
-    if os.path.isfile(filepath):
-        with open(filepath, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line or "x" not in line:
+
+# Límites activos para el formato que el usuario seleccione
+custom_limits = {}      # { "card-name": 0|1|2 }
+errante_cards = set()   # { "card-name", ... }
+
+def load_format_restrictions(format_key):
+    """
+    Lee restrictions/<format_key>/restricted_cards.txt
+    y devuelve (limits_dict, errante_set).
+    """
+    limits = {}
+    errantes = set()
+    subdir = os.path.join(RESTRICTIONS_DIR, format_key)
+    path = os.path.join(subdir, "restricted_cards.txt")
+    if os.path.isfile(path):
+        with open(path, "r", encoding="utf-8") as f:
+            for raw in f:
+                line = raw.strip()
+                # ignorar líneas vacías o comentarios
+                if not line or line.startswith("#") or "x" not in line:
                     continue
-                parts = line.split("x", 1)
-                try:
-                    lim = int(parts[0])
-                    name = parts[1].strip()
-                    if name in restricted_limits:
-                        restricted_limits[name] = min(restricted_limits[name], lim)
-                    else:
-                        restricted_limits[name] = lim
-                except:
-                    continue
+                cat, name = [p.strip() for p in line.split("x", 1)]
+                internal = name.lower().replace(" ", "-")
+                # categoría errante → solo badge visual
+                if cat.lower() == "e":
+                    errantes.add(internal)
+                else:
+                    try:
+                        qty = int(cat)    # debe ser 0, 1 o 2
+                        limits[internal] = qty
+                    except ValueError:
+                        # línea malformada → ignorar
+                        continue
+    return limits, errantes
+
+# Al inicio no hay formato elegido, así que no hay restricciones cargadas
+custom_limits, errante_cards = {}, set()
 
 # =============================================================================
 # MAPEO DE SAGAS Y RAZAS
@@ -181,6 +277,7 @@ cost_category_counts = {i: defaultdict(int) for i in range(0, 11)}
 current_saga   = None
 current_race   = None
 current_format = None
+_hint_shown    = False
 
 # =============================================================================
 # FUNCIONES AUXILIARES DE VALIDACIÓN Y FILTRADO
@@ -261,11 +358,12 @@ def add_card_gui():
     if internal not in ALL_CARDS:
         messagebox.showwarning("No se encontró", f"Carta \"{display_name}\" no existe.")
         return
-    can_add, reason = can_add_card(internal, int(qty_var.get()))
 
-    if not can_add:
-        messagebox.showwarning("No permitido", reason)
+    ok, _ = can_add_card(internal, int(qty_var.get()))
+    if not ok:
+        messagebox.showwarning("No permitido", get_add_error_message(internal))
         return
+
     deck.add_card(internal, int(qty_var.get()))
     play_sfx("add_card.wav")
     update_category_summary()
@@ -339,7 +437,12 @@ def import_deck_dropdown():
     any_added = False
 
     for canonical, qty in entries:
-        lim = restricted_limits.get(canonical, CARD_MAX_DEFAULT)
+        # unlimited "oro" (only total-deck cap applies)
+        if canonical.lower() == "oro":
+            lim = 50
+        else:
+            lim = restricted_limits.get(canonical, CARD_MAX_DEFAULT)
+
         to_add = min(qty, lim, 50 - deck.total_cards())
         if to_add > 0:
             deck.card_counts[canonical] = to_add
@@ -374,6 +477,19 @@ def save_deck_gui():
         messagebox.showerror("Error", "El nombre de archivo no puede estar vacío.")
         return
 
+    # build the path of the existing file
+    filepath = os.path.join(DECKS_DIR, f"{fname}.txt")
+    # if it already exists, delete it so save_deck_to_file will overwrite cleanly
+    if os.path.isfile(filepath):
+        try:
+            os.remove(filepath)
+        except Exception as e:
+            messagebox.showwarning(
+                "Advertencia",
+                f"No se pudo sobrescribir {fname}.txt:\n{e}"
+            )
+
+    # now save (this will recreate fname.txt)
     path = save_deck_to_file(deck.card_counts, fname)
     messagebox.showinfo("Guardado", f"Mazo guardado en:\n{path}")
     deck.is_saved = True
@@ -465,13 +581,19 @@ def update_mana_curve():
         )
 
 image_id_to_name = {}
-resized_images = {}
+unit_for_card = {}
 def card_sort_key(card_name):
     card = ALL_CARDS[card_name]
     cost_for_sort = card.cost if card.cost is not None else 999
     return (category_priority[card.category], cost_for_sort, card.name.lower())
 
 def update_deck_display():
+    had_scroll = bool(deck_vbar.winfo_ismapped())
+    if had_scroll:
+        # yview() returns (first_frac, last_frac)
+        prev_y = deck_canvas.yview()[0]
+    else:
+        prev_y = 0.0
     """Redraw the deck canvas; keep duplicates together, wrap before overflow,
        always draw Oro as the very last row, left-justified, with 'oro' last."""
     deck_canvas.delete("all")
@@ -480,22 +602,17 @@ def update_deck_display():
     except:
         pass
 
+    unit_for_card.clear()
     image_id_to_name.clear()
     flat = deck.list_all_copies()
     width_limit = deck_canvas.winfo_width() - DECK_CANVAS_RIGHT_MARGIN
 
-    # Lazy-load any missing tk_images
+    # ensure images are loaded…
     for name in set(flat):
         card = ALL_CARDS.get(name)
-        if not card:
-            continue
-        # try to load if missing
-        if not getattr(card, "tk_image", None):
-            try:
-                card.load_image()
-            except:
-                # give up on this card
-                continue
+        if card and not getattr(card, "tk_image", None):
+            try: card.load_image()
+            except: pass
 
     x = DECK_CANVAS_LEFT_MARGIN
     y = DECK_CANVAS_TOP_MARGIN
@@ -506,34 +623,59 @@ def update_deck_display():
         card = ALL_CARDS[name]
         img = getattr(card, "tk_image", None)
         if not img:
-            return  # skip cards with no image
+            return
         w, h = img.width(), img.height()
         last_h = max(last_h, h)
 
-        total_block_width = w + (count - 1) * (w // 4)
-        if x + total_block_width > width_limit:
+        # wrap line
+        total_w = w + (count - 1) * (w//4)
+        if x + total_w > width_limit:
             x = DECK_CANVAS_LEFT_MARGIN
             y += last_h + DECK_VERTICAL_GUTTER
             last_h = h
 
+        # draw all copies
         for i in range(count):
-            xi = x + i * (w // 4)
-            img_id = deck_canvas.create_image(xi, y,
-                                             image=img,
-                                             anchor="nw",
-                                             tags=("card",))
+            xi = x + i*(w//4)
+            img_id = deck_canvas.create_image(xi, y, image=img, anchor="nw", tags=("card",))
             image_id_to_name[img_id] = name
+            unit_tag = f"unit_{img_id}"
+            deck_canvas.addtag_withtag(unit_tag, img_id)
+            unit_for_card[img_id] = unit_tag
 
-        x += total_block_width
+        # figure out if this card needs a badge
+        internal = name.lower()
+        badge_key = None
+        if internal in custom_limits:
+            badge_key = {0:"ban",1:"unica",2:"x2"}[custom_limits[internal]]
+        elif internal in errante_cards:
+            badge_key = "errante"
 
-    # ── Draw NON-Oro cards ──
+        # if so, place it once at bottom‐right of the last copy
+        if badge_key:
+            badge_img = BADGE_IMAGES.get(badge_key)
+            if badge_img:
+                # compute last copy position
+                xi_last = x + (count - 1) * (w//4)
+                bx = xi_last + w  - _BADGE_SIZE[0]
+                by = y          + h  - _BADGE_SIZE[1]
+                badge_id = deck_canvas.create_image(bx, by,
+                                                image=badge_img,
+                                                anchor="nw",
+                                                tags=("badge",))
+                deck_canvas.addtag_withtag(unit_tag, badge_id)
+
+        # advance x for the next block
+        x += total_w
+
+    # draw non-Oro...
     from collections import Counter
     counts = Counter(flat)
     non_oros = [n for n in flat if ALL_CARDS[n].category != "Oros"]
     for name in sorted(set(non_oros), key=card_sort_key):
         place_block(name, counts[name])
 
-    # ── Draw Oro cards in final row ──
+    # draw Oro row (unchanged)...
     oro_counts = [(n, c) for n, c in deck.card_counts.items()
                   if ALL_CARDS[n].category == "Oros"]
     if oro_counts:
@@ -562,6 +704,7 @@ def update_deck_display():
                                                  anchor="nw",
                                                  tags=("card",))
                 image_id_to_name[img_id] = name
+                # big-Oro text count stays as-is
                 deck_canvas.create_text(
                     x + w + 20, y + h // 2,
                     text=f"x{cnt}",
@@ -571,11 +714,29 @@ def update_deck_display():
                 )
                 x += w + 100
 
-    # ── Update stats & curves ──
+    # update stats…
     update_category_summary()
     update_mana_curve()
     update_consistency()
     update_stats()
+
+    # ── update scrollregion ──
+    deck_canvas.configure(scrollregion=deck_canvas.bbox("all"))
+    x0, y0, x1, y1 = deck_canvas.bbox("all")
+    now_scroll = (y1 - y0) > deck_canvas.winfo_height()
+
+    # show or hide the bar
+    if now_scroll:
+        deck_vbar.grid()
+    else:
+        deck_vbar.grid_remove()
+
+    # if we already had scroll active, restore your last position;
+    # otherwise (first time it became active) snap to top
+    if now_scroll and had_scroll:
+        deck_canvas.yview_moveto(prev_y)
+    elif now_scroll:
+        deck_canvas.yview_moveto(0.0)
 
 from stats import cumulative_probabilities
 
@@ -870,6 +1031,12 @@ def on_format_change(*args):
             deck.is_saved = False
 
         current_format = low
+        lbl_formato.configure(foreground="black")
+        new_limits, new_errantes = load_format_restrictions(low)
+        custom_limits.clear()
+        custom_limits.update(new_limits)
+        errante_cards.clear()
+        errante_cards.update(new_errantes)
 
         # ── one‐time hint only if not yet shown ───────────────────────────
         if not _hint_shown:
@@ -905,6 +1072,29 @@ def on_format_change(*args):
     update_label_highlight()
     refresh_search()
 
+# =============================================================================
+# BADGE ICONS (solo PIL, NO PhotoImage aún)
+# =============================================================================
+_BADGE_SIZE = (24, 24)
+
+# 1) Cargar y redimensionar las PIL-images de los badges
+_badge_pils = {}
+for key, fname in [
+    ("ban",     "ban.png"),
+    ("unica",   "unica.png"),
+    ("x2",      "x2.png"),
+    ("errante", "errante.png"),
+]:
+    path = os.path.join(UI_IMAGES_DIR, fname)
+    if os.path.isfile(path):
+        pil = Image.open(path).convert("RGBA")
+        _badge_pils[key] = pil.resize(_BADGE_SIZE, Image.LANCZOS)
+    else:
+        _badge_pils[key] = None
+
+# 2) Creamos un dict vacío para más tarde convertir a PhotoImage
+BADGE_IMAGES = { key: None for key in _badge_pils }
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIGURACIÓN DE LA INTERFAZ (GUI) – ventana “maximizada” ajustada
 # ─────────────────────────────────────────────────────────────────────────────
@@ -926,6 +1116,16 @@ screen_h = root.winfo_screenheight() - TITLEBAR_HEIGHT
 # Fija geometría y deshabilita redimensionado
 root.geometry(f"{screen_w}x{screen_h}+0+0")
 root.resizable(False, False)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Ahora que `root` existe, convertimos PIL→PhotoImage para los badges
+# ─────────────────────────────────────────────────────────────────────────────
+for key, pil in _badge_pils.items():
+    if pil:
+        # PASAMOS master=root para evitar el “Too early to create image” error
+        BADGE_IMAGES[key] = ImageTk.PhotoImage(pil, master=root)
+    else:
+        BADGE_IMAGES[key] = None
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper functions – thumbnails & drawing the 8-card hand
@@ -1217,15 +1417,39 @@ def _draw_deck_bg(event=None):
                                  anchor="nw", tags=("bg",))
         deck_canvas.tag_lower("bg")
 
-# Canvas del mazo
+# ── Scrollable container for the deck ──
 CANVAS_FIXED_W = 1152
 CANVAS_FIXED_H = 675
-deck_canvas = tk.Canvas(left_container, width=CANVAS_FIXED_W,
-                        height=CANVAS_FIXED_H, bd=0, highlightthickness=0)
-deck_canvas.grid(row=0, column=0, columnspan=3,
-                 padx=10, pady=10, sticky="nw")
+
+deck_frame = tk.Frame(left_container, bg=BG_DEFAULT)
+deck_frame.grid(row=0, column=0, columnspan=3,
+                padx=10, pady=10, sticky="nsew")
+deck_frame.grid_rowconfigure(0, weight=1)
+deck_frame.grid_columnconfigure(0, weight=1)
+
+deck_canvas = tk.Canvas(deck_frame,
+                        width=CANVAS_FIXED_W,
+                        height=CANVAS_FIXED_H,
+                        bd=0, highlightthickness=0,
+                        bg=BG_DEFAULT)
+deck_canvas.grid(row=0, column=0, sticky="nsew")
 deck_canvas.bind("<Configure>", _draw_deck_bg)
 _draw_deck_bg()
+
+# ── Mouse-wheel scroll for deck canvas ──
+def _on_deck_mousewheel(event):
+    deck_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+
+deck_canvas.bind("<Enter>", lambda e: deck_canvas.bind_all("<MouseWheel>", _on_deck_mousewheel))
+deck_canvas.bind("<Leave>", lambda e: deck_canvas.unbind_all("<MouseWheel>"))
+
+# Vertical scrollbar for deck overflow:
+deck_vbar = ttk.Scrollbar(deck_frame,
+                          orient="vertical",
+                          command=deck_canvas.yview)
+deck_vbar.grid(row=0, column=1, sticky="ns", pady=(DECK_CANVAS_TOP_MARGIN, DECK_CANVAS_TOP_MARGIN))
+
+deck_canvas.configure(yscrollcommand=deck_vbar.set)
 
 # =============================================================================
 # CURVA DE MANÁ (curve_canvas) justo debajo del deck_canvas
@@ -1255,65 +1479,102 @@ for idx, cat in enumerate(category_order):
 
 def show_instructions_overlay():
     global _overlay
+    instr_button["state"] = "disabled"
     _close_overlay()
 
     # full‐size overlay in the right_panel
     _overlay = tk.Frame(right_panel, bg=right_panel.cget("bg"))
     _overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
-
-    # bind Escape to close
     _overlay.focus_set()
     root.bind("<Escape>", _close_overlay)
 
-    # “Cerrar” button, locked to top–right with a margin
+    # ═════════════════════════════════════════════════════
+    # Cerrar button
     close_btn = ttk.Button(
         _overlay,
         text="❌  Cerrar",
         style="Close.TButton",
         command=_close_overlay
-)
+    )
     close_btn.place(relx=1.0, rely=0.0, x=-10, y=10, anchor="ne")
 
-    # ────────────────────────────────────────────────────────────────────────
-    # Load & resize San Martín image (~15% of panel height)
-    # then place it at the left edge of right_panel (i.e. just right of divider)
-    img_path = os.path.join(UI_IMAGES_DIR, "san-martin.png")
+    # ── load & resize San Martín image ────────────────────────────────
     try:
-        pil_img = Image.open(img_path).convert("RGBA")
-        panel_h = right_panel.winfo_height() or root.winfo_screenheight()
-        tgt_h = int(panel_h * 0.28)
-        scale = tgt_h / pil_img.height
-        tgt_w = int(pil_img.width * scale)
-        pil_img = pil_img.resize((tgt_w, tgt_h), Image.LANCZOS)
-        san_img = ImageTk.PhotoImage(pil_img)
+        img_path = os.path.join(UI_IMAGES_DIR, "san-martin.png")
+        pil_img  = Image.open(img_path).convert("RGBA")
+        panel_h  = right_panel.winfo_height() or root.winfo_screenheight()
+        tgt_h    = int(panel_h * 0.28)
+        scale    = tgt_h / pil_img.height
+        pil_img  = pil_img.resize((int(pil_img.width * scale), tgt_h), Image.LANCZOS)
+        san_img  = ImageTk.PhotoImage(pil_img)
+        img_lbl  = tk.Label(_overlay, image=san_img, bg=_overlay.cget("bg"))
+        img_lbl.image = san_img
+        img_lbl.place(x=10, y=10)
     except Exception:
-        san_img = None
+        img_lbl = None
 
-    if san_img:
-        img_lbl = tk.Label(_overlay, image=san_img, bg=_overlay.cget("bg"))
-        img_lbl.image = san_img  # keep a reference
-        # place it 10px in from the left edge of right_panel,
-        # 10px down from the top
-        img_lbl.place(relx=0.0, rely=0.0, x=10, y=10, anchor="nw")
-    # ────────────────────────────────────────────────────────────────────────
-
-    # framed instructions box at bottom 65% of panel
+    # ── framed instructions box ────────────────────────────────────────
     box = tk.LabelFrame(
         _overlay,
         text="Instrucciones de uso",
         font=("Tahoma", 16, "bold"),
         bg=_overlay.cget("bg"),
-        labelanchor="n",
         bd=1, relief="solid",
         padx=12, pady=12
     )
     box.place(relx=0.02, rely=0.30, relwidth=0.96, relheight=0.65)
 
+    # ── credit frame, to the right of the image, above the box ─────────
+    credit_frame = tk.LabelFrame(
+        _overlay,
+        bd=1, relief="solid",
+        bg=_overlay.cget("bg"),
+        padx=8, pady=4
+    )
+    credit_lbl = tk.Label(
+        credit_frame,
+        text="Emilio Boudgouste - 2025 - 'Ni idea que onda los derechos, esto es gratis maestro, disfruta.'",
+        font=("Tahoma", 14, "bold"),
+        bg=credit_frame.cget("bg"),
+        justify="center",
+        wraplength=200   # <<— limit width so text wraps quickly
+    )
+    credit_lbl.pack(fill="both", expand=True)
+
+    def position_credit_box():
+        # wait until both box and image are laid out
+        bx, by, bw = box.winfo_x(), box.winfo_y(), box.winfo_width()
+        cw = credit_frame.winfo_reqwidth()
+        ch = credit_frame.winfo_reqheight()
+
+        # x starts just right of the card image, but no further right than box right edge
+        if img_lbl:
+            ix, iw = img_lbl.winfo_x(), img_lbl.winfo_width()
+            x = ix + iw + 10
+        else:
+            x = bx
+        x = min(x, bx + bw - cw - 5)
+
+        # y sits 5px above box
+        y = by - ch - 5
+
+        # span out to 5px shy of the right edge
+        total_w = _overlay.winfo_width()
+        new_width = total_w - x - 15
+
+        credit_frame.place(x=x, y=y, width=new_width)
+        # now that we have actual width, wrap the text
+        credit_lbl.configure(wraplength=int(new_width * 0.95))
+
+    _overlay.after(50, position_credit_box)
+
+    # ═════════════════════════════════════════════════════
+    # The actual instructions text inside the box
     instructions = (
         "1. Navegación y filtros\n"
         "   • Seleccioná Saga → Raza → Formato.\n"
         "   • Al elegir Formato, se activan los campos “Tipo” y “Carta”.\n"
-        "   • Usá el menú Ordenar (a la derecha de Tipo) para ordenar por Alfabético / Coste / Fuerza.\n\n"
+        "   • Click derecho e izquierdo para agregar/remover carta. Apreta ruedita del mouse para detalles de carta\n\n"
         "2. Añadir / quitar cartas\n"
         "   • Escribí en el campo “Carta”.\n"
         "   • Seleccioná Cantidad (1–3) y apretá “Añadir” o “Eliminar”.\n"
@@ -1328,7 +1589,6 @@ def show_instructions_overlay():
         "   • Esc o ❌: cierra esta ventana.\n"
         "   • Alt+F4 o “Salir”: cierra la aplicación."
     )
-
     instr_lbl = tk.Label(
         box,
         text=instructions,
@@ -1336,15 +1596,14 @@ def show_instructions_overlay():
         bg=box.cget("bg"),
         justify="left",
         anchor="nw",
-        wraplength=1,   # will update shortly
+        wraplength=1,
         padx=4, pady=4
     )
     instr_lbl.pack(fill="both", expand=True)
 
-    # once the box is rendered, set wraplength to 95% of its width
+    # adjust wraplength once box is laid out
     def adjust_wrap():
-        w = box.winfo_width()
-        instr_lbl.configure(wraplength=int(w * 0.95))
+        instr_lbl.configure(wraplength=int(box.winfo_width() * 0.95))
     box.after(50, adjust_wrap)
 
 # --- Estadísticas Adicionales --------------------------------------------------
@@ -1373,6 +1632,7 @@ lbl_avg_cost.grid(row=0, column=0, sticky="w")
 lbl_avg_str .grid(row=1, column=0, sticky="w")
 
 # — Botón Instrucciones de uso (fuera del frame, justo debajo) —
+global instr_button
 instr_button = ttk.Button(
     summary_strip,
     text="Instrucciones de uso",
@@ -1617,7 +1877,7 @@ hand_frame.grid(row=3, column=0, padx=10, pady=(5, 10), sticky="nwe")
 hand_frame.grid_columnconfigure(0, weight=0)   # canvas keeps its size
 hand_frame.grid_columnconfigure(1, weight=1)   # remaining space grows
 
-# ── Canvas con 8 miniaturas ──────────────────────────────────────────────────                  # ⬆️ tamaño de cada carta
+# ── Canvas con 8 miniaturas ────────────────────────────────────────────────── 
 _cols_, _rows_, _gap_ = 4, 2, 6     # 6-px gap instead of 12
 deal_canvas = tk.Canvas(
     hand_frame,
@@ -1761,7 +2021,6 @@ tipo_menu = ttk.Combobox(
     width=10
 )
 tipo_menu.grid(row=0, column=0, sticky="w", padx=(0,10))
-# Trace: cada vez que el usuario seleccione un Tipo nuevo se refresca
 tipo_var.trace("w", lambda *args: refresh_search())
 
 # “Orden” dropdown (campo)
@@ -1777,20 +2036,18 @@ orden_menu  = ttk.Combobox(
 orden_menu.grid(row=0, column=1, sticky="w", padx=(0,10))
 orden_menu.bind("<<ComboboxSelected>>", on_field_select)
 
-# Invert‐order button (solo invierte el sentido)
-invert_btn = ttk.Button(
-    filter_frame,
-    text="↑",
-    width=2,
-    command=on_invert_click
-)
+# Invert‐order button
+invert_btn = ttk.Button(filter_frame, text="↑", width=2,
+                        command=on_invert_click)
 invert_btn.grid(row=0, column=2, sticky="w")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Scrollable canvas for results
 # ─────────────────────────────────────────────────────────────────────────────
-search_canvas = tk.Canvas(search_frame, bg=BG_DEFAULT, bd=0, highlightthickness=0)
-vscroll = ttk.Scrollbar(search_frame, orient="vertical", command=search_canvas.yview)
+search_canvas = tk.Canvas(search_frame, bg=BG_DEFAULT,
+                          bd=0, highlightthickness=0)
+vscroll = ttk.Scrollbar(search_frame, orient="vertical",
+                        command=search_canvas.yview)
 search_canvas.configure(yscrollcommand=vscroll.set)
 
 vscroll.grid(row=1, column=1, sticky="ns")
@@ -1802,8 +2059,6 @@ search_canvas.create_window((0,0), window=_search_interior, anchor="nw")
 def _on_search_scroll(event):
     search_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
 
-# Bind mousewheel directamente al canvas y a su interior,
-# así funcionará sobre tarjetas, fondo o donde pongas el cursor.
 search_canvas.bind("<MouseWheel>", _on_search_scroll)
 _search_interior.bind("<MouseWheel>", _on_search_scroll)
 
@@ -1816,55 +2071,90 @@ _search_interior.bind("<Configure>", _on_search_configure)
 _search_id_to_name = {}
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Thumbnail helper for larger Card Search images
+# Thumbnail helper for Card Search images (with badges)
 # ─────────────────────────────────────────────────────────────────────────────
-SEARCH_THUMB_W, SEARCH_THUMB_H = 96, 144  # 20% más grandes
+SEARCH_THUMB_W, SEARCH_THUMB_H = 96, 144
 
 def _get_search_thumb(card):
     """
-    Devuelve una miniatura centrada de tamaño SEARCH_THUMB_W×SEARCH_THUMB_H.
+    Devuelve un thumbnail SEARCH_THUMB_W×SEARCH_THUMB_H con badge si corresponde.
     """
+    # 1) Load or find base PIL image
     pil = getattr(card, "image", None)
     if pil is None:
         for root_dir, _, files in os.walk(CARD_IMAGES_DIR):
-            jpg = f"{card.name}.jpg"
-            png = f"{card.name}.png"
-            if jpg in files or png in files:
-                path = os.path.join(root_dir, jpg if jpg in files else png)
-                pil = Image.open(path).convert("RGBA")
+            for ext in ("jpg", "png"):
+                fname = f"{card.name}.{ext}"
+                if fname in files:
+                    pil = Image.open(os.path.join(root_dir, fname)).convert("RGBA")
+                    break
+            if pil:
                 break
     if pil is None:
         pil = Image.new("RGBA", (SEARCH_THUMB_W, SEARCH_THUMB_H), (0,0,0,0))
 
+    # 2) Resize and center
     w, h = pil.size
     scale = min(SEARCH_THUMB_W / w, SEARCH_THUMB_H / h)
-    new_w, new_h = int(w * scale), int(h * scale)
-    thumb_pil = pil.resize((new_w, new_h), Image.LANCZOS)
-
+    nw, nh = int(w*scale), int(h*scale)
+    thumb_pil = pil.resize((nw, nh), Image.LANCZOS)
     canvas = Image.new("RGBA", (SEARCH_THUMB_W, SEARCH_THUMB_H), (0,0,0,0))
-    x_off = (SEARCH_THUMB_W - new_w) // 2
-    y_off = (SEARCH_THUMB_H - new_h) // 2
-    canvas.paste(thumb_pil, (x_off, y_off), thumb_pil)
+    off_x = (SEARCH_THUMB_W - nw)//2
+    off_y = (SEARCH_THUMB_H - nh)//2
+    canvas.paste(thumb_pil, (off_x, off_y), thumb_pil)
 
-    return ImageTk.PhotoImage(canvas)
+    # 3) Decide badge
+    internal = card.name.lower()
+    badge_key = None
+    if internal in custom_limits:
+        lvl = custom_limits[internal]
+        badge_key = {0: "ban", 1: "unica", 2: "x2"}.get(lvl)
+    elif internal in errante_cards:
+        badge_key = "errante"
+
+    # 4) Decide all badges for this card
+    badge_keys = []
+    if internal in custom_limits:
+        lvl = custom_limits[internal]
+        badge_keys.append({0: "ban", 1: "unica", 2: "x2"}[lvl])
+    if internal in errante_cards:
+        badge_keys.append("errante")
+
+    # 5) Paste badges: if two, errante goes top-left and the other top-right;
+    #    otherwise (one badge of any kind) always top-right.
+    for bk in badge_keys:
+        badge_pil = _badge_pils.get(bk)
+        if not badge_pil:
+            continue
+
+        if len(badge_keys) == 2 and bk == "errante":
+            pos = (0, 0)
+        else:
+            pos = (SEARCH_THUMB_W - _BADGE_SIZE[0], 0)
+
+        canvas.paste(badge_pil, pos, badge_pil)
+
+
+    # 6) Convert to PhotoImage (tie to root)
+    return ImageTk.PhotoImage(canvas, master=root)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Core search + sort + render
 # ─────────────────────────────────────────────────────────────────────────────
 def refresh_search():
-    # 1) limpiar resultados anteriores
+    # Limpiar resultados anteriores
     for w in _search_interior.winfo_children():
         w.destroy()
     _search_id_to_name.clear()
 
-    # 2) solo mostrar resultados si Saga, Raza, Formato y Tipo están seleccionados
+    # Solo mostrar resultados si Saga, Raza, Formato y Tipo están seleccionados
     if current_saga is None or current_race is None or current_format is None:
         return
     tipo = tipo_var.get()
     if tipo == "Tipo":
         return
 
-    # 3) mapear Tipo → categoría interna
+    # Mapear Tipo → categoría interna
     tipo_map = {
         "Aliado":   "Aliados",
         "Talisman": "Talismanes",
@@ -1874,7 +2164,7 @@ def refresh_search():
     }
     cat_filter = tipo_map[tipo]
 
-    # 4) recolectar nombres según filtros
+    # Recolectar nombres según filtros
     names = []
     for nm, card in ALL_CARDS.items():
         if card.category != cat_filter:
@@ -1890,7 +2180,7 @@ def refresh_search():
             continue
         names.append(nm)
 
-    # 5) ordenar
+    # Ordenar
     field      = current_order_field or orden_var.get()
     descending = not order_ascending
     if field == "Coste":
@@ -1900,7 +2190,7 @@ def refresh_search():
     else:
         names.sort(reverse=descending)
 
-    # 6) dibujar grid con miniaturas ampliadas
+    # Dibujar grid con miniaturas ampliadas
     cols, gap = 6, 2
     bg = _search_interior.cget("bg")
     for idx, nm in enumerate(names):
@@ -1910,9 +2200,21 @@ def refresh_search():
         lbl.image = thumb
         lbl.grid(row=row, column=col, padx=gap, pady=gap)
         _search_id_to_name[lbl] = nm
-        lbl.bind("<ButtonPress-1>", start_search_drag)
-        lbl.bind("<Enter>", lambda e: search_canvas.bind_all("<MouseWheel>", _on_search_scroll))
-        lbl.bind("<Leave>", lambda e: search_canvas.unbind_all("<MouseWheel>"))
+
+        # drag start & keep your scroll binding
+        lbl.bind("<ButtonPress-1>", start_search_drag, add="+")
+        lbl.bind("<Enter>",
+                 lambda e: search_canvas.bind_all("<MouseWheel>", _on_search_scroll),
+                 add="+")
+        lbl.bind("<Leave>",
+                 lambda e: search_canvas.unbind_all("<MouseWheel>"),
+                 add="+")
+
+        # tooltip for name, left of mouse after 1s
+        tip = Tooltip(lbl, nm.replace("-", " ").title(), delay=1000)
+        lbl.bind("<Enter>", lambda e, t=tip: t.schedule(), add="+")
+        lbl.bind("<Leave>", lambda e, t=tip: t.hide(),     add="+")
+
 
 tipo_menu.bind("<<ComboboxSelected>>", lambda e: refresh_search())
 orden_menu.bind("<<ComboboxSelected>>", lambda e: refresh_search())
@@ -1960,7 +2262,7 @@ def on_search_release(ev):
             tgt = getattr(tgt, "master", None)
 
         if inside_left:
-            ok, reason = can_add_card(card, 1)
+            ok, _ = can_add_card(card, 1)
             if ok:
                 deck.add_card(card, 1)
                 play_sfx("add_card.wav")
@@ -1970,7 +2272,7 @@ def on_search_release(ev):
                 update_consistency()
                 update_stats()
             else:
-                messagebox.showwarning("No permitido", reason)
+                messagebox.showwarning("No permitido", get_add_error_message(card))
 
         floater.destroy()
 
@@ -1997,15 +2299,21 @@ def add_card_by_right_click(event):
     if not item:
         return
     name = image_id_to_name.get(item[0])
-    if name:
-        ok, reason = can_add_card(name, 1)
-        if not ok:
-            messagebox.showwarning("No permitido", reason)
-            return
-        deck.add_card(name, 1)
-        play_sfx("add_card.wav")
-        update_category_summary(); update_mana_curve(); update_deck_display()
-        update_consistency();       update_stats()
+    if not name:
+        return
+
+    ok, _ = can_add_card(name, 1)
+    if not ok:
+        messagebox.showwarning("No permitido", get_add_error_message(name))
+        return
+
+    deck.add_card(name, 1)
+    play_sfx("add_card.wav")
+    update_category_summary()
+    update_mana_curve()
+    update_deck_display()
+    update_consistency()
+    update_stats()
 
 # -----------------------------------------------------------------------------  
 # Overlay con detalle (clic central) – grid 3 filas, no solapamientos  
@@ -2013,9 +2321,7 @@ def add_card_by_right_click(event):
 _overlay = None
 
 def _close_overlay(event=None):
-    """Cerrar y eliminar cualquier overlay anterior."""
     global _overlay
-    # unbind Escape so it doesn't fire after we close
     try:
         root.unbind("<Escape>")
     except:
@@ -2024,6 +2330,9 @@ def _close_overlay(event=None):
     if _overlay and _overlay.winfo_exists():
         _overlay.destroy()
     _overlay = None
+
+    # Re-enable the “Instrucciones de uso” button
+    instr_button["state"] = "normal"
 
 def _find_image(card_name: str):
     """Busca card_name.jpg/png en CARD_IMAGES_DIR y subdirectorios."""
@@ -2039,18 +2348,18 @@ def _show_card_overlay(card_name: str):
     global _overlay
     _close_overlay()
 
-    # 1) Crear overlay que cubre right_panel
+    # Crear overlay que cubre right_panel
     _overlay = tk.Frame(right_panel, bg=right_panel.cget("bg"))
     _overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
 
-    # 2) Permitir que la única columna se expanda (para centrar hijos)
+    # Permitir que la única columna se expanda (para centrar hijos)
     _overlay.grid_columnconfigure(0, weight=1)
 
-    # 3) Bind Escape para cerrar
+    # Bind Escape para cerrar
     _overlay.focus_set()
     root.bind("<Escape>", _close_overlay)
 
-    # 4) Botón cerrar en fila 0, columna 0, anclado al NE de esa celda
+    # Botón cerrar en fila 0, columna 0, anclado al NE de esa celda
     btn = ttk.Button(
         _overlay,
         text="✖",
@@ -2059,7 +2368,7 @@ def _show_card_overlay(card_name: str):
 )
     btn.grid(row=0, column=0, sticky="ne", padx=10, pady=10)
 
-    # 5) Cargar imagen de la carta
+    # Cargar imagen de la carta
     card = ALL_CARDS[card_name]
     path = _find_image(card_name)
     pil = None
@@ -2077,12 +2386,12 @@ def _show_card_overlay(card_name: str):
     big_img = ImageTk.PhotoImage(pil)
     _overlay.big_ref = big_img  # evitar GC
 
-    # 6) Mostrar imagen centrada en la celda
+    # Mostrar imagen centrada en la celda
     img_lbl = tk.Label(_overlay, image=big_img,
                        bg=_overlay.cget("bg"))  # sin bd ni relief
     img_lbl.grid(row=1, column=0, pady=(0, 20))
 
-    # 7) Preparar y mostrar estadísticas, también centradas
+    # Preparar y mostrar estadísticas, también centradas
     stats = []
     if card.cost is not None:
         stats.append(("Coste", str(card.cost)))
@@ -2127,14 +2436,6 @@ def show_detail_on_middle_click(event):
 # -----------------------------------------------------------------------------
 right_panel.grid_columnconfigure(0, weight=1)        # frames ahora se expanden
 
-# -----------------------------------------------------------------------------  
-# Bindings on the deck canvas: left-click to remove, right-click to add,  
-# middle-click on a card to show detail overlay  
-# -----------------------------------------------------------------------------
-# First, canvas-wide binds for background clicks (optional):
-deck_canvas.bind("<Button-1>", remove_card_by_click)
-deck_canvas.bind("<Button-3>", add_card_by_right_click)
-
 # ---------------------------------------------------------------------------
 # Hover: only bring card to front on enter, restore stacking on leave
 # ---------------------------------------------------------------------------
@@ -2142,31 +2443,25 @@ _hover_stack = {}
 
 def _on_card_enter(event):
     canvas = event.widget
-    # find the hovered card item
     items = canvas.find_withtag("current")
     if not items:
         return
-    item = items[0]
-
-    # record what was above this card so we can restore later
-    all_cards = list(canvas.find_withtag("card"))
-    try:
-        idx = all_cards.index(item)
-    except ValueError:
-        return
-    _hover_stack[item] = all_cards[idx+1:]
-
-    # bring this card above all others
-    canvas.tag_raise(item)
+    card_id = items[0]
+    # raise the entire card+badge "unit"
+    unit_tag = unit_for_card.get(card_id)
+    if unit_tag:
+        canvas.tag_raise(unit_tag)
 
 def _on_card_leave(event):
-    canvas = event.widget
-    # restore original stacking order
-    for item, was_above in _hover_stack.items():
-        for other in was_above:
-            canvas.tag_raise(other)
-    _hover_stack.clear()
+    # no stacking-restore needed, badges always ride with their cards
+    pass
 
+# ─── rebind tags (somewhere after canvas creation) ──────────────────────────
+deck_canvas.tag_unbind("card", "<Enter>")
+deck_canvas.tag_unbind("card", "<Leave>")
+
+deck_canvas.tag_bind("card", "<Enter>", _on_card_enter)
+deck_canvas.tag_bind("card", "<Leave>", _on_card_leave)
 
 # ---------------------------------------------------------------------------
 # Bindings on the deck canvas: remove/add/detail and hover

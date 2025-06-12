@@ -7,7 +7,6 @@
 3xcastor
 3xcoliseo
 2xconstantino
-3xcorona-de-laureles
 3xespartaco
 1xexpulsion-de-titanes
 3xfestin
@@ -17,7 +16,7 @@
 3xidmon-el-adivino
 1xira-ignea
 1xjulio-cesar
-3xlira
+6xoro
 3xpolux
 3xsisifo-el-hechicero
 3xtemistocles

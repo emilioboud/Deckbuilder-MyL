@@ -1,1 +1,3 @@
 Pillow>=8.0.0
+playsound==1.3.0
+ttkthemes>=2.2.0
