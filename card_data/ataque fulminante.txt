@@ -1,1 +1,0 @@
-[4, "talismanes", "hel", "reborn"]

@@ -1,0 +1,162 @@
+           __  __ _ _                      _                              _                    
+          |  \/  (_) |_ ___  ___   _   _  | |    ___ _   _  ___ _ __   __| | __ _ ___          
+          | |\/| | | __/ _ \/ __| | | | | | |   / _ \ | | |/ _ \ '_ \ / _` |/ _` / __|         
+          | |  | | | || (_) \__ \ | |_| | | |__|  __/ |_| |  __/ | | | (_| | (_| \__ \         
+          |_|  |_|_|\__\___/|___/  \__, | |_____\___|\__, |\___|_| |_|\__,_|\__,_|___/         
+  ____                _            |___/             |___/                                     
+ / ___|___  _ __  ___| |_ _   _  ___| |_ ___  _ __    __| | ___   _ __ ___   __ _ _______  ___ 
+| |   / _ \| '_ \/ __| __| | | |/ __| __/ _ \| '__|  / _` |/ _ \ | '_ ` _ \ / _` |_  / _ \/ __|
+| |__| (_) | | | \__ \ |_| |_| | (__| || (_) | |    | (_| |  __/ | | | | | | (_| |/ / (_) \__ \
+ \____\___/|_| |_|___/\__|\__,_|\___|\__\___/|_|     \__,_|\___| |_| |_| |_|\__,_/___\___/|___/
+
+			¿Querés armar mazos del MyL sin volverte loco?  
+			Acá tenés una app completita para hacer todo eso y más.  
+			Sin instalar nada raro, sin tocar código, sin drama.
+
+---
+
+🚀 ¿Qué podés hacer?
+
+- Elegir Saga → Raza → Formato (sí, son obligatorios)  
+  - Para Aliados: se necesita Saga + Raza + Formato  
+  - Para todo lo demás (Armas, Talismanes, Totems, Oros): alcanza con Saga + Formato
+
+- Buscar cartas por tipo o por nombre  
+  - Autocompleta mientras escribís  
+  - Filtrás por tipo  
+  - Ordenás por nombre, coste o fuerza
+
+- Agregar cartas de varias formas:  
+  - Clic derecho en imagen  
+  - Desde la búsqueda arrastrás la carta al mazo  
+  - O escribís el nombre y cantidad, y le das a “Añadir”
+
+- Sacar cartas:  
+  - Clic izquierdo en la imagen = -1
+
+- Ver carta en grande:  
+  - Clic del medio (ruedita) → se abre un popup con imagen y stats
+
+- Visualizar tu mazo armado con cartas que se solapan tipo TCG  
+- Curva de maná generada automáticamente  
+- Ver probabilidades de robar lo que querés en distintas manos  
+- Simular 1000 manos para ver si tu mazo rinde o da pena  
+- Guardar tu mazo como .txt y volverlo a importar después  
+- Máximo 50 cartas, te frena si te pasás
+
+---
+
+🖼️ La interfaz parece salida de 1999. Porque sí.
+
+No es moderna, no es "flat", ni "responsive". Pero funciona.  
+Y tiene su encanto. No te quejes.
+
+---
+
+🎮 Cómo se usa
+
+1. Elegí Saga y Formato  
+   - Sin eso no hacés nada.  
+   - Si vas a usar Aliados, también elegí Raza (es obligatorio para ellos).
+
+2. Buscá cartas  
+   - Escribí el nombre (autocompleta) o filtrá por tipo.  
+   - Ordená por nombre, coste o fuerza. Invertí el orden si querés.
+
+3. Agregá cartas  
+   - Clic derecho = +1 copia  
+   - Arrastrá desde la búsqueda al mazo  
+   - O escribí nombre + cantidad y apretá “Añadir carta”
+
+4. Quitá cartas  
+   - Clic izquierdo = -1 copia  
+   - O escribí nombre + cantidad y apretá “Eliminar carta”
+
+5. Ver carta en grande  
+   - Clic del medio en cualquier imagen te la muestra en tamaño completo con stats.
+
+6. Indicadores visuales  
+   - Las cartas que son únicas, errantes, x2 o baneadas tienen iconitos en la esquina para que sepas qué onda.
+
+7. Resumen automático  
+   - Te dice cuántas cartas tenés por tipo y en total.  
+   - Actualiza cada vez que tocás algo.
+
+8. Curva de maná  
+   - Costes de 0 a 10  
+   - Barras por tipo de carta (colores distintos)  
+   - No incluye Oros
+
+9. Probabilidades de robo  
+   - Calcula chance de que te salga:  
+     - ≥2 Oros  
+     - ≥3 Oros  
+     - ≥1 Aliado de coste 2  
+   - Muestra para:  
+     - Mano inicial de 8  
+     - Mulligan 8→7  
+     - Mulligan 8→7→6
+
+10. Simulación de 1000 manos  
+    - Te dice:  
+      - Cuántas tuvieron ≥2 Oros  
+      - Cuántas tuvieron jugada de turno 1  
+      - Cuántas cumplieron ambas
+
+11. Guardar e importar mazos  
+    - Se guardan como .txt en decks/  
+    - Cada línea es tipo:  
+      ```
+      3xguardia-real
+      2xantorcha-olimpica
+      ```
+    - Al importar, bloquea las cartas que no cumplen con los filtros actuales
+
+12. Botón "Instrucciones de uso"  
+    - Dentro de la app, por si querés repasar todo desde ahí
+
+---
+
+🧠 Sobre los datos de carta (carpeta card_data)
+
+Cada carta tiene un archivo .txt que la describe. El formato es:
+
+Formatos válidos:
+- Aliados:
+  [coste, fuerza, tipo, raza, saga, formato]  
+  (ej: [2, 3, "aliados", "heroe", "hel", "pbx"])
+- Talismanes, Armas, Totems:
+  [coste, tipo, saga, formato]  
+  (ej: [3, "Talismanes", "hdd", "reborn"])
+- Oros:
+  [tipo, saga, formato]
+  (ej: ["Oros", "esp", "reborn"])
+
+Campos obligatorios:
+- Saga y Formato son obligatorios para todas las cartas  
+- Raza también es obligatoria para Aliados
+
+Si una carta tiene mal la info (tipo, coste, fuerza, etc.):
+- Buscá su archivo .txt en card_data/  
+- Abrilo con cualquier editor de texto  
+- Corregí el campo correspondiente.
+- Guardá y reiniciá la app
+
+---
+
+🔕 ¿Y si algo no funciona?
+
+Lo hice en mis ratos libres. Gratis.  
+Si falla, mala suerte.  
+Si no te gusta, mejor.  
+Si querés más cosas, programalas vos.
+
+¿Te gusta? Usalo. ¿No te gusta? Cerralo.
+
+---
+
+¡Listo, máquina!  
+Ahora andá a armar un mazo decente.  
+Y si perdés, que no sea por falta de herramientas.
+
+💣

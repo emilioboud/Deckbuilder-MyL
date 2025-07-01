@@ -24,7 +24,8 @@ def fetch_and_generate(card_data_dir, card_images_dir):
                 if f.is_file() and f.suffix.lower() in exts:
                     images.append(f)
 
-    new_images = [img for img in images if img.stem not in processed and img.stem not in existing]
+    new_images = [img for img in images
+                  if img.stem not in processed and img.stem not in existing]
     if not new_images:
         print("No new images found that need processing.")
         return
@@ -40,47 +41,36 @@ def fetch_and_generate(card_data_dir, card_images_dir):
     # 3) Build GUI
     root = tk.Tk()
     root.title("Card Data Entry")
-
-    # Maximize window
     try:
         root.state('zoomed')
     except:
         root.attributes('-zoomed', True)
-
     screen_w = root.winfo_screenwidth()
     screen_h = root.winfo_screenheight()
 
-    # Define fonts
     LABEL_FONT   = ("Arial", 16)
     ENTRY_FONT   = ("Arial", 16)
     COMBO_FONT   = ("Arial", 16)
     BUTTON_FONT  = ("Arial", 16)
 
-    # Configure ttk styles for Combobox and Buttons
     style = ttk.Style(root)
     style.configure("TCombobox", font=COMBO_FONT)
     style.configure("TButton",   font=BUTTON_FONT)
 
     state = {"idx": 0, "photo": None}
 
-    # Layout frames
     top    = tk.Frame(root); top.grid(row=0, column=0, padx=20, pady=20)
     left   = tk.Frame(top); left.grid(row=0, column=0)
     right  = tk.Frame(top); right.grid(row=0, column=1, padx=(40,0))
     bottom = tk.Frame(root); bottom.grid(row=1, column=0, pady=20)
 
-    # Image display
     img_label = tk.Label(left)
     img_label.pack()
 
-    # Form fields (Tipo first)
     tk.Label(right, text="Tipo:",   font=LABEL_FONT).grid(row=0, column=0, sticky="e", pady=5)
-    tipo_cb = ttk.Combobox(
-        right,
-        values=["aliados","talismanes","totems","armas","oros"],
-        state="readonly",
-        width=25
-    )
+    tipo_cb = ttk.Combobox(right,
+                           values=["aliados","talismanes","totems","armas","oros"],
+                           state="readonly", width=25)
     tipo_cb.grid(row=0, column=1, pady=5)
 
     tk.Label(right, text="Coste:",  font=LABEL_FONT).grid(row=1, column=0, sticky="e", pady=5)
@@ -92,44 +82,36 @@ def fetch_and_generate(card_data_dir, card_images_dir):
     fuerza_e.grid(row=2, column=1, pady=5)
 
     tk.Label(right, text="Saga:",   font=LABEL_FONT).grid(row=3, column=0, sticky="e", pady=5)
-    saga_cb = ttk.Combobox(
-        right,
-        values=list(raza_map.keys()),
-        state="readonly",
-        width=25
-    )
+    saga_cb = ttk.Combobox(right, values=list(raza_map.keys()),
+                           state="readonly", width=25)
     saga_cb.grid(row=3, column=1, pady=5)
 
     tk.Label(right, text="Raza:",   font=LABEL_FONT).grid(row=4, column=0, sticky="e", pady=5)
     raza_cb = ttk.Combobox(right, values=[], state="disabled", width=25)
     raza_cb.grid(row=4, column=1, pady=5)
 
+    formato_var = tk.StringVar(value="pbx")
     tk.Label(right, text="Formato:", font=LABEL_FONT).grid(row=5, column=0, sticky="e", pady=5)
-    formato_e = tk.Entry(right, state="readonly", font=ENTRY_FONT, width=27)
-    formato_e.grid(row=5, column=1, pady=5)
-    formato_e.insert(0, "reborn")
+    fmt_frame = tk.Frame(right)
+    fmt_frame.grid(row=5, column=1, pady=5, sticky="w")
+    tk.Radiobutton(fmt_frame, text="reborn", variable=formato_var,
+                   value="reborn", font=ENTRY_FONT).pack(side="left", padx=(0,10))
+    tk.Radiobutton(fmt_frame, text="pbx", variable=formato_var,
+                   value="pbx", font=ENTRY_FONT).pack(side="left")
 
-    # 4) Enable/disable per Tipo (do not reset Saga)
     def on_tipo_change(event=None):
         t = tipo_cb.get()
-        coste_e.delete(0, tk.END)
-        fuerza_e.delete(0, tk.END)
+        coste_e.delete(0, tk.END); fuerza_e.delete(0, tk.END)
         raza_cb.set("")
         if t == "aliados":
-            coste_e.config(state="normal")
-            fuerza_e.config(state="normal")
-            saga_cb.config(state="readonly")
-            raza_cb.config(state="readonly")
+            coste_e.config(state="normal"); fuerza_e.config(state="normal")
+            saga_cb.config(state="readonly"); raza_cb.config(state="readonly")
         elif t in {"talismanes","totems","armas"}:
-            coste_e.config(state="normal")
-            fuerza_e.config(state="disabled")
-            saga_cb.config(state="readonly")
-            raza_cb.config(state="disabled")
+            coste_e.config(state="normal"); fuerza_e.config(state="disabled")
+            saga_cb.config(state="readonly"); raza_cb.config(state="disabled")
         elif t == "oros":
-            coste_e.config(state="disabled")
-            fuerza_e.config(state="disabled")
-            saga_cb.config(state="readonly")
-            raza_cb.config(state="disabled")
+            coste_e.config(state="disabled"); fuerza_e.config(state="disabled")
+            saga_cb.config(state="readonly"); raza_cb.config(state="disabled")
 
     tipo_cb.bind("<<ComboboxSelected>>", on_tipo_change)
 
@@ -141,7 +123,6 @@ def fetch_and_generate(card_data_dir, card_images_dir):
 
     saga_cb.bind("<<ComboboxSelected>>", on_saga_change)
 
-    # 5) Show each card (resize up to 70% width, 80% height)
     def show_card():
         idx = state['idx']
         img = new_images[idx]
@@ -150,8 +131,7 @@ def fetch_and_generate(card_data_dir, card_images_dir):
         max_w = int(screen_w * 0.7)
         max_h = int(screen_h * 0.8)
         ratio = min(max_w / w, max_h / h)
-        pil = pil.resize((int(w*ratio), int(h*ratio)), resample=Image.LANCZOS)
-
+        pil = pil.resize((int(w*ratio), int(h*ratio)), Image.LANCZOS)
         photo = ImageTk.PhotoImage(pil)
         state['photo'] = photo
         img_label.config(image=photo)
@@ -159,7 +139,6 @@ def fetch_and_generate(card_data_dir, card_images_dir):
 
     show_card()
 
-    # 6) Navigation & saving
     def next_card():
         if state['idx'] + 1 >= len(new_images):
             messagebox.showinfo("Done", "All cards processed.")
@@ -172,12 +151,10 @@ def fetch_and_generate(card_data_dir, card_images_dir):
         t = tipo_cb.get().strip()
         if not t:
             return messagebox.showerror("Missing", "Please choose a Tipo.")
-
         s = saga_cb.get().strip()
         if not s:
             return messagebox.showerror("Missing", "Please choose a Saga.")
-
-        fmt = "reborn"
+        fmt = formato_var.get()
         arr = []
 
         if t == "aliados":
@@ -199,7 +176,6 @@ def fetch_and_generate(card_data_dir, card_images_dir):
 
         elif t == "oros":
             arr = [t, s, fmt]
-
         else:
             return messagebox.showerror("Invalid", "Unknown Tipo.")
 
@@ -209,17 +185,18 @@ def fetch_and_generate(card_data_dir, card_images_dir):
             json.dump(arr, fo, ensure_ascii=False)
         with open(fetch_log, "a", encoding="utf-8") as lg:
             lg.write(stem + "\n")
-
         next_card()
 
     def skip_and_next():
         next_card()
 
-    # 7) Buttons (separate frame)
     btn_w = 20
-    tk.Button(bottom, text="Save & Next", width=btn_w, font=BUTTON_FONT, command=save_and_next).pack(side="left", padx=10)
-    tk.Button(bottom, text="Skip",       width=btn_w, font=BUTTON_FONT, command=skip_and_next).pack(side="left", padx=10)
-    tk.Button(bottom, text="Quit",       width=btn_w, font=BUTTON_FONT, command=root.destroy).pack(side="left", padx=10)
+    tk.Button(bottom, text="Save & Next", width=btn_w,
+              font=BUTTON_FONT, command=save_and_next).pack(side="left", padx=10)
+    tk.Button(bottom, text="Skip", width=btn_w,
+              font=BUTTON_FONT, command=skip_and_next).pack(side="left", padx=10)
+    tk.Button(bottom, text="Quit", width=btn_w,
+              font=BUTTON_FONT, command=root.destroy).pack(side="left", padx=10)
 
     root.mainloop()
 
@@ -228,7 +205,6 @@ def add_raza(card_data_dir):
     if not all_txts:
         print("No .txt files found.")
         return
-
     for txt in all_txts:
         content = txt.read_text("utf-8").strip()
         if not content:
@@ -256,10 +232,19 @@ def add_raza(card_data_dir):
 def main():
     script_dir = Path(__file__).parent
     project_root = script_dir.parent
-    cd = project_root / "card_data"
-    ci = project_root / "card_images"
+
+    default_cd = project_root / "card_data"
+    default_ci = project_root / "card_images"
+
+    cd_input = input(f"Path to card_data [{default_cd}]: ").strip()
+    ci_input = input(f"Path to card_images [{default_ci}]: ").strip()
+
+    cd = Path(cd_input) if cd_input else default_cd
+    ci = Path(ci_input) if ci_input else default_ci
+
     if not cd.exists() or not ci.exists():
-        print("card_data or card_images missing."); sys.exit(1)
+        print(f"Error: '{cd}' or '{ci}' not found.")
+        sys.exit(1)
 
     while True:
         choice = input("Mode: 1) GUI  2) add raza  (or 'quit'): ").strip().lower()

@@ -7,9 +7,20 @@ from PIL import Image, ImageTk
 # Constantes y rutas base
 # =============================================================================
 def get_base_path():
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        return sys._MEIPASS
+    """
+    Devuelve la carpeta donde residen nuestros recursos:
+      - card_data/
+      - card_images/
+      - restrictions/
+    Al ejecutar como EXE, devuelve el directorio del .exe.
+    De lo contrario, usa la misma lógica que antes.
+    """
+    # 1) Si estamos ejecutando como exe congelado (PyInstaller), 
+    #    devolver la carpeta donde vive el ejecutable.
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
 
+    # 2) Si no, caer en la lógica original
     script_dir = os.path.abspath(os.path.dirname(__file__))
     if (
         os.path.isdir(os.path.join(script_dir, "card_data"))
@@ -27,6 +38,7 @@ def get_base_path():
         return cwd
 
     return script_dir
+
 
 BASE_PATH        = get_base_path()
 CARD_DATA_DIR    = os.path.join(BASE_PATH, "card_data")

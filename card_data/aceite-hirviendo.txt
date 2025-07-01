@@ -1,1 +1,1 @@
-["oros","esp","reborn"]
+[4,"talismanes","esp","reborn"]

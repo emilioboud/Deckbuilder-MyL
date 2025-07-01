@@ -1,0 +1,1 @@
+[3, 0, "aliados", "eterno", "ddr", "pbx"]

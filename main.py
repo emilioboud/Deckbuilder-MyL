@@ -19,13 +19,15 @@ except ImportError:
 def get_base_path():
     """
     Devuelve la carpeta donde residen nuestros recursos:
-    - card_data/
-    - card_images/
-    - restrictions/
-    - ui_images/
+      - card_data/
+      - card_images/
+      - restrictions/
+      - ui_images/
+    Si estamos ejecutando como EXE congelado (PyInstaller), devuelve la carpeta
+    donde vive el ejecutable; de lo contrario usa la lógica original.
     """
-    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-        return sys._MEIPASS
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
 
     script_dir = os.path.abspath(os.path.dirname(__file__))
     for sub in ("card_data", "card_images", "restrictions", "ui_images"):
@@ -42,6 +44,7 @@ def get_base_path():
         return cwd
 
     return script_dir
+
 THUMB_W, THUMB_H = 80, 120  
 BASE_PATH = get_base_path()
 CARD_DATA_DIR    = os.path.join(BASE_PATH, "card_data")
@@ -55,6 +58,7 @@ DECK_CANVAS_RIGHT_MARGIN = 10
 DECK_VERTICAL_GUTTER = 7
 PROMPT_BORDER_WIDTH = 2
 PROMPT_BORDER_COLOR = "red"
+TRANSPARENT_COLOR = "#FF00FF"
 
 # =============================================================================
 # IMPORTAR CLASE Card DESDE cards.py
@@ -277,6 +281,7 @@ cost_category_counts = {i: defaultdict(int) for i in range(0, 11)}
 current_saga   = None
 current_race   = None
 current_format = None
+pbx_mode = None
 _hint_shown    = False
 
 # =============================================================================
@@ -285,16 +290,34 @@ _hint_shown    = False
 def is_card_valid_for_filters(name):
     if name.lower() == "oro":
         return True
-    if current_saga is None or current_race is None or current_format is None:
+    if current_format is None:
         return False
     carta = ALL_CARDS[name]
-    if carta.saga != current_saga:
+
+    # Format must match
+    if carta.format not in ("pbx", "reborn"):
         return False
-    if carta.format != current_format:
+    if current_format == "reborn" and carta.format != "reborn":
         return False
-    if carta.category == "Aliados" and carta.race != current_race:
+    if current_format == "pbx" and carta.format not in ("pbx", "reborn"):
         return False
-    return True
+
+    # Aliados: always restrict to matching raza and saga
+    if carta.category == "Aliados":
+        if current_race is None or carta.race != current_race:
+            return False
+        if current_saga is None or carta.saga != current_saga:
+            return False
+        return True
+
+    # Non-aliados
+    if pbx_mode == "pbx_libre":
+        # allow cross-saga non-Aliados
+        return True
+
+    # default: enforce saga for all
+    return current_saga is not None and carta.saga == current_saga
+
 
 def can_add_card(name, qty):
     internal = name.lower()
@@ -317,7 +340,11 @@ def can_add_card(name, qty):
     if total_actual + qty > 50:
         return False, "El mazo no puede exceder 50 cartas."
 
-    max_allowed = restricted_limits.get(name, CARD_MAX_DEFAULT)
+
+    if pbx_mode in ("pbx_racial", "pbx_libre"):
+        max_allowed = custom_limits.get(name, CARD_MAX_DEFAULT)
+    else:
+        max_allowed = restricted_limits.get(name, CARD_MAX_DEFAULT)
     ya_tengo = deck.card_counts.get(name, 0)
     if ya_tengo + qty > max_allowed:
         return False, f"No puedes tener más de {max_allowed} copias de '{name}'."
@@ -986,12 +1013,14 @@ def on_race_change(*args):
             deck.is_saved = False
 
         current_race = sel.lower()
-
     # --- populate & enable Formato combobox ---------------------------------
-    # Temporarily disable PBX until support is ready; just show Reborn.
-    # To re-enable PBX later, change this tuple back to ("Pbx","Reborn")
-    format_menu.configure(values=("Reborn",), state="readonly")
+    # Now that a race is chosen, allow all three formats
+    format_menu.configure(
+        values=("Reborn", "PBX Racial", "PBX Soporte Libre"),
+        state="readonly"
+    )
     lbl_formato.configure(foreground="red")
+
 
     update_category_summary()
     update_mana_curve()
@@ -1002,68 +1031,74 @@ def on_race_change(*args):
     refresh_search()
 
 def on_format_change(*args):
-    global current_format, _hint_shown
+    global current_format, _hint_shown, pbx_mode
     sel = format_var.get().strip()
     card_entry.delete(0, tk.END)
 
-    # ── if they reset back to “Seleccione”, clear everything ───────────────
+    # ── Reset state ──
+    pbx_mode = None
+
     if sel == "Seleccione":
         current_format = None
-        # restore normal look if they ever hit “Seleccione” again
         tipo_menu.configure(style="TCombobox")
         card_entry.configure(style="TEntry")
-
     else:
-        # purge old‐format cards
+        # clear cards from wrong format
         low = sel.lower()
         invalidas = [
             n for n in deck.card_counts
-            if n.lower() != "oro" and ALL_CARDS[n].format != low
+            if n.lower() != "oro" and ALL_CARDS[n].format not in ("pbx", "reborn")
         ]
         if invalidas and deck.total_cards() > 0:
             if deck.is_saved and messagebox.askyesno(
-               "Cartas inválidas",
-               "Tu mazo contiene cartas de otro formato.\n"
-               "¿Queres guardar antes de vaciarla?"
+                "Cartas inválidas",
+                "Tu mazo contiene cartas de otro formato.\n"
+                "¿Queres guardar antes de vaciarla?"
             ):
                 save_deck_gui()
             deck.card_counts.clear()
             deck.is_saved = False
 
-        current_format = low
+        # set format and pbx mode
+        if sel == "PBX Racial":
+            current_format = "pbx"
+            pbx_mode = "pbx_racial"
+            restr_name = "pbx_racial"
+        elif sel == "PBX Soporte Libre":
+            current_format = "pbx"
+            pbx_mode = "pbx_libre"
+            restr_name = "pbx_libre"
+        else:  # Reborn
+            current_format = "reborn"
+            pbx_mode = None
+            restr_name = "reborn"
+
         lbl_formato.configure(foreground="black")
-        new_limits, new_errantes = load_format_restrictions(low)
+
+        # load restrictions for selected mode
+        new_limits, new_errantes = load_format_restrictions(restr_name)
         custom_limits.clear()
         custom_limits.update(new_limits)
         errante_cards.clear()
         errante_cards.update(new_errantes)
 
-        # ── one‐time hint only if not yet shown ───────────────────────────
+        # one-time style alert
         if not _hint_shown:
             tipo_menu.configure(style="Alert.TCombobox")
             card_entry.configure(style="Alert.TEntry")
 
             def _clear_hint(event=None):
-                # restore styles
                 tipo_menu.configure(style="TCombobox")
                 card_entry.configure(style="TEntry")
-
-                # unbind our one-time hint clearers
                 tipo_menu.unbind("<<ComboboxSelected>>", bind_tipo)
-                card_entry.unbind("<FocusIn>",              bind_carta)
-
-                # **and now actually refresh the card search** if they've already chosen
-                # a real type
+                card_entry.unbind("<FocusIn>", bind_carta)
                 if tipo_var.get() != "Tipo":
                     refresh_search()
 
-
             bind_tipo  = tipo_menu.bind("<<ComboboxSelected>>", _clear_hint)
-            bind_carta = card_entry.bind("<FocusIn>",              _clear_hint)
-
+            bind_carta = card_entry.bind("<FocusIn>", _clear_hint)
             _hint_shown = True
 
-    # ── finish updating the rest of the UI ─────────────────────────────────
     update_category_summary()
     update_mana_curve()
     update_deck_display()
@@ -1680,11 +1715,8 @@ format_menu = ttk.Combobox(form_frame, textvariable=format_var,
                            state="disabled", width=17)
 format_menu.grid(row=2, column=1, sticky="w", padx=(4,0))
 
-# ——————————————————————————————————————————————
-# Hide PBX option until full PBX support is implemented.
-# To restore PBX later, remove this .configure override.
-format_menu.configure(values=("Reborn",))
-# ——————————————————————————————————————————————
+format_menu.configure(values=("Reborn", "PBX Racial", "PBX Soporte Libre"))
+
 
 # (callbacks stay the same)
 saga_var.trace("w", on_saga_change)
@@ -1717,36 +1749,72 @@ def autocomplete_card(event):
         except tk.TclError:
             pass
         return
+
     text = card_entry.get()
     try:
         sel_start = card_entry.index("sel.first")
         typed = text[:sel_start]
     except tk.TclError:
         typed = text
+
     if len(typed.strip()) < 2:
         try:
             card_entry.select_clear()
         except tk.TclError:
             pass
         return
+
     lookup = typed.strip().lower().replace(" ", "-")
     if current_saga is None or current_format is None:
         return
+
     matches = []
     for nm, card in ALL_CARDS.items():
         if not nm.startswith(lookup):
             continue
-        if card.saga != current_saga or card.format != current_format:
-            continue
-        if card.category == "Aliados" and (current_race is None or card.race != current_race):
-            continue
+
+        # Formato
+        if current_format == "pbx":
+            if card.format not in ("pbx", "reborn"):
+                continue
+        else:
+            if card.format != current_format:
+                continue
+
+        # Reglas PBX
+        if pbx_mode == "pbx_racial":
+            if card.category == "Aliados":
+                if card.saga != current_saga or card.race != current_race:
+                    continue
+            elif card.category == "Oros":
+                if nm != "oro" and card.saga != current_saga:
+                    continue
+            else:
+                if card.saga != current_saga:
+                    continue
+
+        elif pbx_mode == "pbx_libre":
+            if card.category == "Aliados":
+                if card.saga != current_saga or card.race != current_race:
+                    continue
+
+        else:
+            if card.category == "Aliados":
+                if card.saga != current_saga or card.race != current_race:
+                    continue
+            elif card.category != "Oros":
+                if card.saga != current_saga:
+                    continue
+
         matches.append(nm)
+
     if not matches:
         try:
             card_entry.select_clear()
         except tk.TclError:
             pass
         return
+
     matches.sort()
     full = matches[0]
     display = " ".join(part.capitalize() for part in full.split("-"))
@@ -2184,7 +2252,6 @@ def on_search_right_click(event):
     update_consistency()
     update_stats()
 
-
 def refresh_search():
     # Limpiar resultados anteriores
     for w in _search_interior.winfo_children():
@@ -2211,20 +2278,52 @@ def refresh_search():
     # Recolectar nombres según filtros
     names = []
     for nm, card in ALL_CARDS.items():
+        # 1) Categoria
         if card.category != cat_filter:
             continue
-        if cat_filter == "Oros" and nm == "oro":
-            names.append(nm)
-            continue
-        if current_saga and card.saga != current_saga:
-            continue
-        if cat_filter == "Aliados" and current_race and card.race != current_race:
-            continue
-        if current_format and card.format != current_format:
-            continue
+
+        # 2) Formato
+        if current_format == "pbx":
+            if card.format not in ("pbx", "reborn"):
+                continue
+        else:
+            if card.format != current_format:
+                continue
+
+        # 3) Reglas de PBX
+        if pbx_mode == "pbx_racial":
+            if card.category == "Aliados":
+                # Aliados: mismo saga y misma raza
+                if card.saga != current_saga or card.race != current_race:
+                    continue
+            elif card.category == "Oros":
+                # Oros: permitido el genérico "oro" o los de la saga actual
+                if nm != "oro" and card.saga != current_saga:
+                    continue
+            else:
+                # Todos los demás: mismo saga
+                if card.saga != current_saga:
+                    continue
+
+        elif pbx_mode == "pbx_libre":
+            if card.category == "Aliados":
+                # Solo aliados están restringidos
+                if card.saga != current_saga or card.race != current_race:
+                    continue
+
+        else:
+            # Reborn: misma lógica que antes
+            if card.category == "Aliados":
+                if card.saga != current_saga or card.race != current_race:
+                    continue
+            elif card.category != "Oros":
+                if card.saga != current_saga:
+                    continue
+
+        # 4) Pasó todos los filtros: agregar
         names.append(nm)
 
-    # Ordenar
+    # Orden
     field      = current_order_field or orden_var.get()
     descending = not order_ascending
     if field == "Coste":
@@ -2234,7 +2333,7 @@ def refresh_search():
     else:
         names.sort(reverse=descending)
 
-    # Dibujar grid con miniaturas ampliadas
+    # Renderizar resultados
     cols, gap = 6, 2
     bg = _search_interior.cget("bg")
     for idx, nm in enumerate(names):
@@ -2245,25 +2344,17 @@ def refresh_search():
         lbl.grid(row=row, column=col, padx=gap, pady=gap)
         _search_id_to_name[lbl] = nm
 
-        # drag start → add drag/drop
         lbl.bind("<ButtonPress-1>", start_search_drag, add="+")
-        # right-click → add one copy
         lbl.bind("<Button-3>", on_search_right_click)
-
-        # middle-click → show detail overlay
         lbl.bind("<ButtonPress-2>",
                  lambda e, name=nm: _show_card_overlay(name),
                  add="+")
-
-        # keep scroll active on hover
         lbl.bind("<Enter>",
                  lambda e: search_canvas.bind_all("<MouseWheel>", _on_search_scroll),
                  add="+")
         lbl.bind("<Leave>",
                  lambda e: search_canvas.unbind_all("<MouseWheel>"),
                  add="+")
-
-        # tooltip for name
         tip = Tooltip(lbl, nm.replace("-", " ").title(), delay=1000)
         lbl.bind("<Enter>", lambda e, t=tip: t.schedule(), add="+")
         lbl.bind("<Leave>", lambda e, t=tip: t.hide(),     add="+")
@@ -2280,29 +2371,53 @@ def start_search_drag(ev):
     if not card_name:
         return
 
-    floater = tk.Label(root, image=lbl.image, bg=root.cget("bg"))
-    floater.image = lbl.image
-    _drag_data["widget"] = floater
+    # create a borderless always-on-top window for the drag image
+    drag_win = tk.Toplevel(root)
+    drag_win.overrideredirect(True)
+    drag_win.attributes("-topmost", True)
+    # set up a transparent color key
+    drag_win.config(bg=TRANSPARENT_COLOR)
+    drag_win.attributes("-transparentcolor", TRANSPARENT_COLOR)
+
+    # place the card image into that window
+    drag_lbl = tk.Label(drag_win,
+                        image=lbl.image,
+                        bg=TRANSPARENT_COLOR,
+                        bd=0, highlightthickness=0)
+    drag_lbl.pack()
+
+    # record it for the motion/release callbacks
+    _drag_data["widget"] = drag_win
     _drag_data["card"]   = card_name
 
-    floater.place(x=ev.x_root - THUMB_W//2, y=ev.y_root - THUMB_H//2)
+    # initial position
+    x = ev.x_root - THUMB_W // 2
+    y = ev.y_root - THUMB_H // 2
+    drag_win.geometry(f"+{x}+{y}")
+
     root.bind("<B1-Motion>", on_search_drag)
     root.bind("<ButtonRelease-1>", on_search_release)
 
+
 def on_search_drag(ev):
-    floater = _drag_data["widget"]
-    if floater:
-        floater.place(x=ev.x_root - THUMB_W//2, y=ev.y_root - THUMB_H//2)
+    drag_win = _drag_data["widget"]
+    if drag_win:
+        # move the toplevel to follow the cursor
+        x = ev.x_root - THUMB_W // 2
+        y = ev.y_root - THUMB_H // 2
+        drag_win.geometry(f"+{x}+{y}")
+
 
 def on_search_release(ev):
-    floater = _drag_data["widget"]
-    card    = _drag_data["card"]
+    drag_win = _drag_data["widget"]
+    card     = _drag_data["card"]
 
     root.unbind("<B1-Motion>")
     root.unbind("<ButtonRelease-1>")
 
-    if floater:
-        floater.place_forget()
+    if drag_win:
+        # figure out where we dropped
+        drag_win.destroy()
         root.update_idletasks()
 
         tgt = root.winfo_containing(ev.x_root, ev.y_root)
@@ -2325,8 +2440,6 @@ def on_search_release(ev):
                 update_stats()
             else:
                 messagebox.showwarning("No permitido", get_add_error_message(card))
-
-        floater.destroy()
 
     _drag_data["widget"] = None
     _drag_data["card"]   = None

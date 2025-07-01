@@ -1,0 +1,1 @@
+pyinstaller --name MylDeckbuilder --onedir --windowed --icon "myl.ico" --contents-directory "." --add-data "decks;decks" --add-data "card_data;card_data" --add-data "card_images;card_images" --add-data "ui_images;ui_images" --add-data "sfx;sfx" --add-data "restrictions;restrictions" main.py
