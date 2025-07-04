@@ -23,27 +23,15 @@ def get_base_path():
       - card_images/
       - restrictions/
       - ui_images/
-    Si estamos ejecutando como EXE congelado (PyInstaller), devuelve la carpeta
-    donde vive el ejecutable; de lo contrario usa la lógica original.
+      - decks/
+    Siempre se basa en la ubicación de este archivo (o del EXE si está congelado).
     """
+    # Si estamos ejecutando como EXE congelado (PyInstaller), usar el ejecutable
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
 
-    script_dir = os.path.abspath(os.path.dirname(__file__))
-    for sub in ("card_data", "card_images", "restrictions", "ui_images"):
-        if not os.path.isdir(os.path.join(script_dir, sub)):
-            break
-    else:
-        return script_dir
-
-    cwd = os.getcwd()
-    for sub in ("card_data", "card_images", "restrictions", "ui_images"):
-        if not os.path.isdir(os.path.join(cwd, sub)):
-            break
-    else:
-        return cwd
-
-    return script_dir
+    # De lo contrario, devolver la carpeta donde está este script
+    return os.path.abspath(os.path.dirname(__file__))
 
 THUMB_W, THUMB_H = 80, 120  
 BASE_PATH = get_base_path()
@@ -216,7 +204,19 @@ RACES_BY_SAGA = {
 # =============================================================================
 from deck import Deck, deck, ALL_CARDS, CARD_NAME_MAP
 from deck import is_card_valid_for_filters, can_add_card
-from deck import get_deck_files, load_deck_from_file, save_deck_to_file, restricted_limits
+from deck import load_deck_from_file, save_deck_to_file, restricted_limits
+# …and add this helper once at module level:
+
+def get_deck_files():
+    """Returns sorted list of all .txt filenames in DECKS_DIR."""
+    try:
+        return sorted(
+            fn for fn in os.listdir(DECKS_DIR)
+            if fn.lower().endswith(".txt")
+               and os.path.isfile(os.path.join(DECKS_DIR, fn))
+        )
+    except FileNotFoundError:
+        return []
 
 # =============================================================================
 # CARGAR TODAS LAS CARTAS
@@ -499,27 +499,30 @@ def import_deck_dropdown():
     refresh_deck_dropdown()
 
 def save_deck_gui():
+    # 1) Asegurarnos de que la carpeta decks exista
+    os.makedirs(DECKS_DIR, exist_ok=True)
+
+    # 2) Nombre de archivo
     fname = save_entry.get().strip()
     if not fname:
         messagebox.showerror("Error", "El nombre de archivo no puede estar vacío.")
         return
 
-    # build the path of the existing file
+    # 3) Ruta completa
     filepath = os.path.join(DECKS_DIR, f"{fname}.txt")
-    # if it already exists, delete it so save_deck_to_file will overwrite cleanly
-    if os.path.isfile(filepath):
-        try:
-            os.remove(filepath)
-        except Exception as e:
-            messagebox.showwarning(
-                "Advertencia",
-                f"No se pudo sobrescribir {fname}.txt:\n{e}"
-            )
 
-    # now save (this will recreate fname.txt)
-    path = save_deck_to_file(deck.card_counts, fname)
-    messagebox.showinfo("Guardado", f"Mazo guardado en:\n{path}")
+    # 4) Escribir manualmente todas las cartas en el .txt
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            for name, cnt in deck.card_counts.items():
+                f.write(f"{cnt}x{name}\n")
+    except Exception as e:
+        messagebox.showerror("Error", f"No se pudo guardar el archivo:\n{e}")
+        return
+
+    # 5) Confirmar éxito y refrescar dropdown
     deck.is_saved = True
+    messagebox.showinfo("Guardado", f"Mazo guardado en:\n{filepath}")
     refresh_deck_dropdown()
 
 # =============================================================================
@@ -1827,8 +1830,8 @@ def autocomplete_card(event):
 card_entry.bind("<KeyRelease>", autocomplete_card)
 
 # — Cantidad dropdown —
-ttk.Label(card_menu_frame, text="Cantidad:", font=("Tahoma",12,"bold")
-          ).grid(row=0, column=2, sticky="e")
+ttk.Label(card_menu_frame, text="Cantidad:", font=("Tahoma",12,"bold")).grid(
+    row=0, column=2, sticky="e")
 qty_var  = tk.StringVar(value="1")
 qty_menu = ttk.Combobox(card_menu_frame, textvariable=qty_var,
                         values=("1","2","3"), state="readonly",
@@ -1838,22 +1841,19 @@ qty_menu.grid(row=0, column=3, sticky="w", padx=(5,20))
 # — Botones Añadir / Eliminar —
 add_button    = ttk.Button(card_menu_frame, text="Añadir carta", command=add_card_gui)
 remove_button = ttk.Button(card_menu_frame, text="Eliminar carta", command=remove_card_gui)
-add_button.grid(   row=0, column=4, padx=(0,10))
+add_button.grid(row=0, column=4, padx=(0,10))
 remove_button.grid(row=0, column=5, padx=(0,0))
 
 # — Guardar como —
-ttk.Label(card_menu_frame, text="Guardar como:",
-          font=("Tahoma",12,"bold")
+ttk.Label(card_menu_frame, text="Guardar como:", font=("Tahoma",12,"bold")
           ).grid(row=1, column=0, sticky="e", pady=(8,0))
 save_entry = ttk.Entry(card_menu_frame, width=24)
 save_entry.grid(row=1, column=1, sticky="w", padx=(5,10), pady=(8,0))
-save_button = ttk.Button(card_menu_frame, text="Guardar mazo",
-                         command=save_deck_gui)
+save_button = ttk.Button(card_menu_frame, text="Guardar mazo", command=save_deck_gui)
 save_button.grid(row=1, column=2, padx=(0,20), pady=(8,0))
 
 # — Importar mazo —
-ttk.Label(card_menu_frame, text="Importar mazo:",
-          font=("Tahoma",12,"bold")
+ttk.Label(card_menu_frame, text="Importar mazo:", font=("Tahoma",12,"bold")
           ).grid(row=1, column=3, sticky="e", pady=(8,0))
 deck_var    = tk.StringVar(value="Sin mazos")
 deck_option = ttk.Combobox(
@@ -1865,18 +1865,27 @@ deck_option = ttk.Combobox(
 )
 deck_option.grid(row=1, column=4, sticky="w", padx=(5,10), pady=(8,0))
 
-def refresh_deck_dropdown():
-    deck_option.configure(values=get_deck_files())
-
-# ensure dropdown is up-to-date now and after imports
-refresh_deck_dropdown()
-
 import_button = ttk.Button(
     card_menu_frame,
     text="Importar mazo",
     command=lambda: (import_deck_dropdown(), refresh_deck_dropdown())
 )
 import_button.grid(row=1, column=5, padx=(10,10), pady=(8,0))
+
+def refresh_deck_dropdown():
+    decks = get_deck_files()
+    if decks:
+        deck_option.configure(values=decks, state="readonly")
+        if deck_var.get() not in decks:
+            deck_var.set(decks[0])
+        import_button.configure(state="normal")
+    else:
+        deck_option.configure(values=[], state="disabled")
+        deck_var.set("Sin mazos")
+        import_button.configure(state="disabled")
+
+# initialize
+refresh_deck_dropdown()
 
 # — Salir —
 quit_button = ttk.Button(
@@ -2253,19 +2262,22 @@ def on_search_right_click(event):
     update_stats()
 
 def refresh_search():
-    # Limpiar resultados anteriores
+    # 0) Siempre reiniciar el scroll al tope
+    search_canvas.yview_moveto(0)
+
+    # 1) Limpiar resultados anteriores
     for w in _search_interior.winfo_children():
         w.destroy()
     _search_id_to_name.clear()
 
-    # Solo mostrar resultados si Saga, Raza, Formato y Tipo están seleccionados
+    # 2) Solo mostrar resultados si Saga, Raza, Formato y Tipo están seleccionados
     if current_saga is None or current_race is None or current_format is None:
         return
     tipo = tipo_var.get()
     if tipo == "Tipo":
         return
 
-    # Mapear Tipo → categoría interna
+    # 3) Mapear Tipo → categoría interna
     tipo_map = {
         "Aliado":   "Aliados",
         "Talisman": "Talismanes",
@@ -2275,55 +2287,51 @@ def refresh_search():
     }
     cat_filter = tipo_map[tipo]
 
-    # Recolectar nombres según filtros
+    # 4) Recoger nombres según filtros
     names = []
     for nm, card in ALL_CARDS.items():
-        # 1) Categoria
         if card.category != cat_filter:
             continue
 
-        # 2) Formato
+        # Formato básico
         if current_format == "pbx":
             if card.format not in ("pbx", "reborn"):
                 continue
-        else:
-            if card.format != current_format:
+        else:  # reborn
+            if card.format != "reborn":
                 continue
 
-        # 3) Reglas de PBX
+        # PBX Racial
         if pbx_mode == "pbx_racial":
             if card.category == "Aliados":
-                # Aliados: mismo saga y misma raza
                 if card.saga != current_saga or card.race != current_race:
                     continue
             elif card.category == "Oros":
-                # Oros: permitido el genérico "oro" o los de la saga actual
                 if nm != "oro" and card.saga != current_saga:
                     continue
             else:
-                # Todos los demás: mismo saga
                 if card.saga != current_saga:
                     continue
 
+        # PBX Libre
         elif pbx_mode == "pbx_libre":
             if card.category == "Aliados":
-                # Solo aliados están restringidos
                 if card.saga != current_saga or card.race != current_race:
                     continue
 
+        # Reborn (ningún pbx_mode)
         else:
-            # Reborn: misma lógica que antes
             if card.category == "Aliados":
                 if card.saga != current_saga or card.race != current_race:
                     continue
-            elif card.category != "Oros":
+            else:
+                # <-- aquí: TODOS los demás (incluyendo Oros) deben coincidir en saga
                 if card.saga != current_saga:
                     continue
 
-        # 4) Pasó todos los filtros: agregar
         names.append(nm)
 
-    # Orden
+    # 5) Ordenar según el campo
     field      = current_order_field or orden_var.get()
     descending = not order_ascending
     if field == "Coste":
@@ -2333,7 +2341,7 @@ def refresh_search():
     else:
         names.sort(reverse=descending)
 
-    # Renderizar resultados
+    # 6) Renderizar resultados
     cols, gap = 6, 2
     bg = _search_interior.cget("bg")
     for idx, nm in enumerate(names):
@@ -2358,6 +2366,9 @@ def refresh_search():
         tip = Tooltip(lbl, nm.replace("-", " ").title(), delay=1000)
         lbl.bind("<Enter>", lambda e, t=tip: t.schedule(), add="+")
         lbl.bind("<Leave>", lambda e, t=tip: t.hide(),     add="+")
+
+    # 7) Asegurarse otra vez de que el scroll quede al tope
+    search_canvas.yview_moveto(0)
 
 tipo_menu.bind("<<ComboboxSelected>>", lambda e: refresh_search())
 orden_menu.bind("<<ComboboxSelected>>", lambda e: refresh_search())
